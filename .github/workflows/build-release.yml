@@ -21,8 +21,11 @@ jobs:
       - name: Install Bun
         uses: oven-sh/setup-bun@v1
 
-      - name: Install wine for electron-builder
-        run: sudo apt-get update && sudo apt-get install -y wine64
+      - name: Install wine64 and wine32 for electron-builder
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install -y wine64 wine32:i386
 
       - name: Install dependencies
         run: bun install
