@@ -22,6 +22,7 @@ const createWindow = (): void => {
       webSecurity: false,
     },
     show: false, // Don't show until ready
+    autoHideMenuBar: true, // Hide the menu bar
   });
 
   // Show window when ready to prevent visual flash
