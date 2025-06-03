@@ -1,6 +1,8 @@
 import { app, BrowserWindow, ipcMain } from "electron";
 import * as path from "path";
 import { isDev } from "./util";
+import { cameraManager } from "./utils/camera";
+import { printerManager } from "./utils/printer";
 
 app.commandLine.appendSwitch("disable-web-security");
 
@@ -63,6 +65,120 @@ const createWindow = (): void => {
     }
   );
 };
+
+// IPC Handlers for Camera
+ipcMain.handle("get-available-cameras", async () => {
+  try {
+    return await cameraManager.getAvailableCameras();
+  } catch (error) {
+    console.error("Failed to get cameras:", error);
+    // Return structured error for frontend
+    if (error instanceof Error) {
+      throw {
+        message: error.message,
+        type: (error as any).type || "UNKNOWN",
+        shouldFallbackToWebcam: (error as any).shouldFallbackToWebcam || false,
+      };
+    }
+    throw error;
+  }
+});
+
+ipcMain.handle("capture-image", async (_, outputPath: string, options: any) => {
+  try {
+    return await cameraManager.captureImage(outputPath, options);
+  } catch (error) {
+    console.error("Failed to capture image:", error);
+    if (error instanceof Error) {
+      throw {
+        message: error.message,
+        type: (error as any).type || "UNKNOWN",
+        shouldFallbackToWebcam: (error as any).shouldFallbackToWebcam || false,
+      };
+    }
+    throw error;
+  }
+});
+
+ipcMain.handle("start-preview", async () => {
+  try {
+    cameraManager.startPreview((frame) => {
+      if (mainWindow) {
+        mainWindow.webContents.send("camera-frame", frame);
+      }
+    });
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to start preview:", error);
+    if (error instanceof Error) {
+      throw {
+        message: error.message,
+        type: (error as any).type || "UNKNOWN",
+        shouldFallbackToWebcam: (error as any).shouldFallbackToWebcam || false,
+      };
+    }
+    throw error;
+  }
+});
+
+ipcMain.handle("stop-preview", async () => {
+  try {
+    cameraManager.stopPreview();
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to stop preview:", error);
+    throw error;
+  }
+});
+
+// Add health check endpoint
+ipcMain.handle("check-camera-health", async () => {
+  try {
+    return await cameraManager.isGphoto2Available();
+  } catch (error) {
+    return false;
+  }
+});
+
+// IPC Handlers for Printer
+ipcMain.handle("get-available-printers", async () => {
+  try {
+    return await printerManager.getAvailablePrinters();
+  } catch (error) {
+    console.error("Failed to get printers:", error);
+    throw error;
+  }
+});
+
+ipcMain.handle("get-default-printer", async () => {
+  try {
+    return await printerManager.getDefaultPrinter();
+  } catch (error) {
+    console.error("Failed to get default printer:", error);
+    throw error;
+  }
+});
+
+ipcMain.handle(
+  "print-image",
+  async (_, imagePath: string, printerName?: string, options?: any) => {
+    try {
+      return await printerManager.printImage(imagePath, printerName, options);
+    } catch (error) {
+      console.error("Failed to print image:", error);
+      throw error;
+    }
+  }
+);
+
+ipcMain.handle("print-images", async (_, images: string[]) => {
+  try {
+    return await printerManager.printImages(images);
+  } catch (error) {
+    console.error("Failed to print images:", error);
+    throw error;
+  }
+});
 
 app.whenReady().then(createWindow);
 
