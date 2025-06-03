@@ -71,8 +71,10 @@ The application is a standalone Windows app optimized for touchscreen devices, i
 #### 3.1.1 Photo Mode
 
 - User selects "Photo Mode".
+- User selects photo type:
+  - **Strip type**: Takes 2 photos, provides 2 copies (4 total prints).
+  - **A6 type**: Takes 4 photos, single copy.
 - User clicks "Start".
-- User selects the number of photos to take.
 - For each photo:
   - 5-second countdown.
   - Photo is taken.
@@ -82,10 +84,12 @@ The application is a standalone Windows app optimized for touchscreen devices, i
   - User can apply one filter to all photos.
   - Display two cards:
     - Left: taken photos.
-    - Right: collage template matching the number of photos.
+    - Right: collage template matching the photo type.
   - User arranges photos in the collage.
   - User clicks "Done".
+  - User selects the number of copies.
   - Final collage is sent to the printer and printed.
+  - QR code is displayed for soft copy links.
 
 #### 3.1.2 Flipbook Mode
 
@@ -93,11 +97,11 @@ The application is a standalone Windows app optimized for touchscreen devices, i
 - User chooses a filter to apply to the video.
 - User clicks "Confirm" to start.
 - 3-second countdown.
-- Record a 5-second video at 24 frames per second (or as specified), with the selected filter applied.
+- Record a 7-second video at 24 frames per second (or as specified), with the selected filter applied.
 - Preview the video.
 - User can retake once.
 - After confirmation:
-  - Video is split into frames.
+  - Video is split into frames in ascending order (starting from the last frame for proper stapling sequence).
   - Each frame is sent to the printer and printed as a flipbook.
 
 ### 3.2 Non-Functional Requirements
