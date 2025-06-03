@@ -11,7 +11,11 @@
    - Displays error messages for issues such as hardware failure, printer errors, or unexpected problems.
 
 3. **Success/Completion Page**
+
    - Confirms successful printing and completion of the process.
+
+4. **QR Code Display Page**
+   - Shows QR code for accessing soft copy links after printing completion.
 
 ---
 
@@ -19,7 +23,7 @@
 
 1. **Photo Mode Start Page**
 
-   - User selects the number of photos to take and starts the process.
+   - User selects photo type (Strip type: 2 photos with 2 copies, or A6 type: 4 photos single copy) and starts the process.
 
 2. **Photo Capture Page**
 
@@ -31,9 +35,13 @@
 
 4. **Collage Arrangement Page**
 
-   - User arranges the filtered photos into the collage template.
+   - User arranges the filtered photos into the collage template matching the selected photo type.
 
-5. **Print Preview & Confirmation Page (Photo Mode)**
+5. **Copy Selection Page (Photo Mode)**
+
+   - User selects the number of copies to print.
+
+6. **Print Preview & Confirmation Page (Photo Mode)**
    - Shows the final collage for review and confirmation before printing.
 
 ---
@@ -46,7 +54,7 @@
 
 2. **Video Countdown & Recording Page**
 
-   - Displays countdown, then records the video with the selected filter.
+   - Displays countdown, then records a 7-second video with the selected filter.
 
 3. **Video Preview & Retake Page**
 

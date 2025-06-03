@@ -1,11 +1,39 @@
-import * as printer from "@grandchef/node-printer";
 import * as fs from "fs";
 import { Printer, PrintOptions, PrintJob } from "../types/printer.type";
 
+// Import printer with error handling
+let printer: any = null;
+try {
+  printer = require("@grandchef/node-printer");
+} catch (error) {
+  console.error("Failed to load printer module:", error);
+}
+
 export class PrinterManager {
+  private isPrinterAvailable: boolean;
+
+  constructor() {
+    this.isPrinterAvailable = !!printer;
+    if (!this.isPrinterAvailable) {
+      console.warn("Printer module not available. Running in mock mode.");
+    }
+  }
+
   async getAvailablePrinters(): Promise<Printer[]> {
     return new Promise((resolve, reject) => {
       try {
+        if (!this.isPrinterAvailable) {
+          resolve([
+            {
+              name: "Mock Printer",
+              displayName: "Mock Printer (Module Not Available)",
+              status: "available",
+              isDefault: true,
+            },
+          ]);
+          return;
+        }
+
         const printers = printer.getPrinters();
         const formattedPrinters: Printer[] = printers.map((p: any) => ({
           name: p.name,
@@ -15,7 +43,15 @@ export class PrinterManager {
         }));
         resolve(formattedPrinters);
       } catch (error) {
-        reject(error);
+        console.error("Error getting printers:", error);
+        resolve([
+          {
+            name: "Error Printer",
+            displayName: "Printer Error - Check Console",
+            status: "error",
+            isDefault: true,
+          },
+        ]);
       }
     });
   }
@@ -43,6 +79,21 @@ export class PrinterManager {
         }
 
         const jobId = `job_${Date.now()}`;
+
+        if (!this.isPrinterAvailable) {
+          console.log(
+            `[MOCK] Printing image ${imagePath} to ${
+              printerName || "default printer"
+            }`
+          );
+          setTimeout(() => {
+            resolve({
+              id: jobId,
+              status: "completed",
+            });
+          }, 1000);
+          return;
+        }
 
         const printOptions: any = {};
 
@@ -75,7 +126,13 @@ export class PrinterManager {
           },
         });
       } catch (error) {
-        reject(error);
+        console.error("Print error:", error);
+        const jobId = `job_${Date.now()}`;
+        reject({
+          id: jobId,
+          status: "error",
+          error: error instanceof Error ? error.message : "Unknown print error",
+        });
       }
     });
   }
@@ -101,6 +158,11 @@ export class PrinterManager {
     }
 
     return jobs;
+  }
+
+  // Add a printer health check method
+  async isPrinterModuleAvailable(): Promise<boolean> {
+    return this.isPrinterAvailable;
   }
 }
 

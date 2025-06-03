@@ -13,7 +13,8 @@
     "dev:app": "concurrently \"bun run dev\" \"bun run wait-and-electron\"",
     "wait-and-electron": "wait-on http://localhost:5173 && bun run electron:dev",
     "build:exe": "bun run build && tsc --project tsconfig.electron.json && electron-builder --win --publish=never",
-    "dist": "bun run build:exe"
+    "dist": "bun run build:exe",
+    "postinstall": "electron-builder install-app-deps"
   },
   "build": {
     "appId": "com.photobooth.app",
@@ -55,6 +56,7 @@
   "dependencies": {
     "@grandchef/node-printer": "^0.8.0",
     "@hookform/resolvers": "^5.0.1",
+    "@mapbox/node-pre-gyp": "^2.0.0",
     "@radix-ui/react-alert-dialog": "^1.1.14",
     "@radix-ui/react-aspect-ratio": "^1.1.7",
     "@radix-ui/react-avatar": "^1.1.10",
@@ -79,6 +81,7 @@
     "motion": "^12.16.0",
     "next-themes": "^0.4.6",
     "node-pre-gyp": "^0.17.0",
+    "qrcode.react": "^4.2.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-hook-form": "^7.57.0",

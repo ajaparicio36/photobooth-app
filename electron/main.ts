@@ -180,6 +180,15 @@ ipcMain.handle("print-images", async (_, images: string[]) => {
   }
 });
 
+// Add printer health check endpoint
+ipcMain.handle("check-printer-health", async () => {
+  try {
+    return await printerManager.isPrinterModuleAvailable();
+  } catch (error) {
+    return false;
+  }
+});
+
 app.whenReady().then(createWindow);
 
 app.on("window-all-closed", () => {

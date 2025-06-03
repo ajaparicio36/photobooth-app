@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   getDefaultPrinter: () => ipcRenderer.invoke("get-default-printer"),
   printImage: (imagePath: string, printerName?: string, options?: any) =>
     ipcRenderer.invoke("print-image", imagePath, printerName, options),
+  checkPrinterHealth: () => ipcRenderer.invoke("check-printer-health"),
 
   // Image processing
   processImage: (imagePath: string, filters: any) =>
