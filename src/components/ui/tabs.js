@@ -1,4 +1,3 @@
-"use client";
 import { jsx as _jsx } from "react/jsx-runtime";
 import * as TabsPrimitive from "@radix-ui/react-tabs";
 import { cn } from "@/lib/utils";

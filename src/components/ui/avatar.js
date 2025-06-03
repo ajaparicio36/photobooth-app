@@ -1,4 +1,3 @@
-"use client";
 import { jsx as _jsx } from "react/jsx-runtime";
 import * as AvatarPrimitive from "@radix-ui/react-avatar";
 import { cn } from "@/lib/utils";

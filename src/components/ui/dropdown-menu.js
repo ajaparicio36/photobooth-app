@@ -1,4 +1,3 @@
-"use client";
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu";
 import { CheckIcon, ChevronRightIcon, CircleIcon } from "lucide-react";
