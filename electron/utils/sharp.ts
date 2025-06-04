@@ -1,6 +1,6 @@
 import * as sharp from "sharp";
 import * as fs from "fs";
-import { sharpPresets, FilterPreset } from "../presets/sharp.preset";
+import { sharpPresets } from "../presets/sharp.preset";
 import {
   SharpFilterOptions,
   CollageOptions,
@@ -9,8 +9,8 @@ import {
   AvailableFilter,
 } from "../types/sharp.type";
 
-// Import image-to-pdf with proper ES6 import
-import imageToPdf from "image-to-pdf";
+// Import PDFDocument from pdfkit directly
+import PDFDocument from "pdfkit";
 
 export class SharpManager {
   async applyFilter(
@@ -45,9 +45,10 @@ export class SharpManager {
         pipeline = pipeline.tint(preset.tint);
       }
 
-      // Apply gamma correction
+      // Apply gamma correction with validation
       if (preset.gamma) {
-        pipeline = pipeline.gamma(preset.gamma);
+        const validGamma = Math.max(1.0, Math.min(3.0, preset.gamma));
+        pipeline = pipeline.gamma(validGamma);
       }
 
       // Apply linear transformation
@@ -112,9 +113,10 @@ export class SharpManager {
         pipeline = pipeline.tint(options.tint);
       }
 
-      // Apply gamma correction
+      // Apply gamma correction with validation
       if (options.gamma) {
-        pipeline = pipeline.gamma(options.gamma);
+        const validGamma = Math.max(1.0, Math.min(3.0, options.gamma));
+        pipeline = pipeline.gamma(validGamma);
       }
 
       // Apply contrast (using linear transformation)
@@ -142,6 +144,59 @@ export class SharpManager {
     }
   }
 
+  private async createPDFFromImage(
+    imagePath: string,
+    outputPath: string
+  ): Promise<void> {
+    return new Promise((resolve, reject) => {
+      try {
+        const doc = new PDFDocument({
+          size: [297.64, 419.53], // A6 size in points (4.15" x 5.83")
+          margin: 0,
+        });
+
+        const stream = fs.createWriteStream(outputPath);
+        doc.pipe(stream);
+
+        // Get image dimensions
+        sharp
+          .default(imagePath)
+          .metadata()
+          .then((metadata) => {
+            const imageWidth = metadata.width || 0;
+            const imageHeight = metadata.height || 0;
+
+            // Calculate scaling to fit A6 page
+            const pageWidth = 297.64;
+            const pageHeight = 419.53;
+
+            const scaleX = pageWidth / imageWidth;
+            const scaleY = pageHeight / imageHeight;
+            const scale = Math.min(scaleX, scaleY);
+
+            const scaledWidth = imageWidth * scale;
+            const scaledHeight = imageHeight * scale;
+
+            const x = (pageWidth - scaledWidth) / 2;
+            const y = (pageHeight - scaledHeight) / 2;
+
+            doc.image(imagePath, x, y, {
+              width: scaledWidth,
+              height: scaledHeight,
+            });
+
+            doc.end();
+          })
+          .catch(reject);
+
+        stream.on("finish", resolve);
+        stream.on("error", reject);
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }
+
   async buildCollage(
     imagePaths: string[],
     outputPath: string,
@@ -157,7 +212,7 @@ export class SharpManager {
 
       // Handle different paper types
       const is2x6Layout = options.paperType === "2x6";
-      const expectedImageCount = is2x6Layout ? 4 : 4; // 2x6 = 2 photos duplicated = 4 total, 4x6 = 4 photos
+      const expectedImageCount = is2x6Layout ? 4 : 4;
 
       if (imagePaths.length !== expectedImageCount) {
         throw new Error(
@@ -350,24 +405,14 @@ export class SharpManager {
         .jpeg({ quality: 95 })
         .toFile(jpegPath);
 
-      // Generate PDF if image-to-pdf is available
+      // Generate PDF using custom implementation
       let pdfPath = "";
-      if (imageToPdf) {
+      try {
         pdfPath = outputPath.replace(/\.[^/.]+$/, ".pdf");
-
-        try {
-          const pdfBuffer = await new Promise<Buffer>((resolve, reject) => {
-            imageToPdf([jpegPath], (err: any, buffer: Buffer) => {
-              if (err) reject(err);
-              else resolve(buffer);
-            });
-          });
-
-          fs.writeFileSync(pdfPath, pdfBuffer);
-        } catch (pdfError) {
-          console.warn("PDF generation failed:", pdfError);
-          pdfPath = "";
-        }
+        await this.createPDFFromImage(jpegPath, pdfPath);
+      } catch (pdfError) {
+        console.warn("PDF generation failed:", pdfError);
+        pdfPath = "";
       }
 
       return {

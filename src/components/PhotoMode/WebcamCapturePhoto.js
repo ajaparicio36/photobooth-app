@@ -7,21 +7,54 @@ const WebcamCapturePhoto = ({ setPhotos, setCurrentPage, paperType, }) => {
     const [countdown, setCountdown] = useState(null);
     const [sessionStarted, setSessionStarted] = useState(false);
     const [webcamReady, setWebcamReady] = useState(false);
+    const [isSessionComplete, setIsSessionComplete] = useState(false);
+    const [displayPhotoCount, setDisplayPhotoCount] = useState(0);
     const videoRef = useRef(null);
     const canvasRef = useRef(null);
     const streamRef = useRef(null);
+    const countdownTimerRef = useRef(null);
+    const captureTimeoutRef = useRef(null);
+    const photoIndexRef = useRef(0);
+    const photosArrayRef = useRef([]);
     const requiredPhotos = PAPER_TYPE_PHOTO_COUNT[paperType];
     useEffect(() => {
         setPhotos([]);
         setCapturedPhotos([]);
+        setIsSessionComplete(false);
+        photoIndexRef.current = 0;
+        photosArrayRef.current = [];
+        setDisplayPhotoCount(0);
         initializeWebcam();
         return () => {
             // Cleanup on unmount
             if (streamRef.current) {
                 streamRef.current.getTracks().forEach((track) => track.stop());
             }
+            clearAllTimers();
         };
     }, []);
+    // Effect to handle session completion
+    useEffect(() => {
+        if (isSessionComplete && photosArrayRef.current.length >= requiredPhotos) {
+            // Update parent with all photos
+            setPhotos(photosArrayRef.current);
+            // Navigate to next page after a brief delay
+            const navigationTimer = setTimeout(() => {
+                setCurrentPage(PhotoModePage.SelectFilterPage);
+            }, 1000);
+            return () => clearTimeout(navigationTimer);
+        }
+    }, [isSessionComplete, requiredPhotos, setPhotos, setCurrentPage]);
+    const clearAllTimers = () => {
+        if (countdownTimerRef.current) {
+            clearTimeout(countdownTimerRef.current);
+            countdownTimerRef.current = null;
+        }
+        if (captureTimeoutRef.current) {
+            clearTimeout(captureTimeoutRef.current);
+            captureTimeoutRef.current = null;
+        }
+    };
     const initializeWebcam = async () => {
         try {
             console.log("Requesting webcam access...");
@@ -173,23 +206,40 @@ const WebcamCapturePhoto = ({ setPhotos, setCurrentPage, paperType, }) => {
     };
     const startPhotoSession = () => {
         setSessionStarted(true);
+        photoIndexRef.current = 0;
+        photosArrayRef.current = [];
+        setCapturedPhotos([]);
+        setDisplayPhotoCount(0);
+        setIsSessionComplete(false);
         startCountdown(5);
     };
     const startCountdown = (seconds) => {
+        // Clear any existing timers
+        clearAllTimers();
         setCountdown(seconds);
         if (seconds <= 0) {
-            setTimeout(capturePhoto, 100);
+            captureTimeoutRef.current = setTimeout(() => {
+                capturePhoto();
+            }, 100);
             return;
         }
-        setTimeout(() => {
+        countdownTimerRef.current = setTimeout(() => {
             startCountdown(seconds - 1);
         }, 1000);
     };
     const capturePhoto = async () => {
-        if (isCapturing || !videoRef.current || !canvasRef.current)
+        if (isCapturing || !videoRef.current || !canvasRef.current) {
+            console.log("Capture blocked - already capturing or refs not ready");
             return;
+        }
+        // Check if we already have enough photos using ref
+        if (photoIndexRef.current >= requiredPhotos) {
+            console.log("Already have enough photos, stopping capture");
+            return;
+        }
         setIsCapturing(true);
         setCountdown(null);
+        clearAllTimers();
         try {
             const canvas = canvasRef.current;
             const video = videoRef.current;
@@ -200,25 +250,38 @@ const WebcamCapturePhoto = ({ setPhotos, setCurrentPage, paperType, }) => {
             const blob = await new Promise((resolve) => {
                 canvas.toBlob((blob) => resolve(blob), "image/jpeg", 0.9);
             });
-            // Use functional state update to ensure we have the latest state
-            setCapturedPhotos((prevPhotos) => {
-                const photoFile = new File([blob], `photo_${prevPhotos.length + 1}.jpg`, { type: "image/jpeg" });
-                const newPhotos = [...prevPhotos, photoFile];
-                console.log(`Webcam Photo ${newPhotos.length} captured. Total needed: ${requiredPhotos}`);
-                console.log("Previous photos count:", prevPhotos.length);
-                console.log("New photos count:", newPhotos.length);
-                // Check if we have all required photos
-                if (newPhotos.length >= requiredPhotos) {
-                    // All photos captured, move to next page
-                    setPhotos(newPhotos);
-                    setCurrentPage(PhotoModePage.SelectFilterPage);
-                }
-                else {
-                    // More photos needed, start countdown for next photo
-                    setTimeout(() => startCountdown(5), 1500);
-                }
-                return newPhotos;
+            const photoFile = new File([blob], `photo_${photoIndexRef.current + 1}.jpg`, {
+                type: "image/jpeg",
             });
+            // Update refs immediately
+            photosArrayRef.current = [...photosArrayRef.current, photoFile];
+            photoIndexRef.current = photoIndexRef.current + 1;
+            // Update display states
+            setCapturedPhotos(photosArrayRef.current);
+            setDisplayPhotoCount(photoIndexRef.current);
+            console.log(`Webcam Photo ${photosArrayRef.current.length} captured. Total needed: ${requiredPhotos}`);
+            console.log(`Photo index is now: ${photoIndexRef.current} of ${requiredPhotos}`);
+            // Check if we have all required photos using the updated ref
+            if (photoIndexRef.current >= requiredPhotos) {
+                // All photos captured - mark session as complete
+                console.log("All photos captured, completing session");
+                setIsSessionComplete(true);
+                clearAllTimers();
+            }
+            else {
+                // More photos needed, start countdown for next photo after delay
+                console.log(`Need ${requiredPhotos - photoIndexRef.current} more photos`);
+                captureTimeoutRef.current = setTimeout(() => {
+                    // Use ref value for accurate check
+                    if (photoIndexRef.current < requiredPhotos && !isCapturing) {
+                        console.log(`Starting countdown for photo ${photoIndexRef.current + 1}`);
+                        startCountdown(5);
+                    }
+                    else {
+                        console.log("Skipping countdown - already have enough photos or still capturing");
+                    }
+                }, 2000);
+            }
         }
         catch (error) {
             console.error("Webcam capture failed:", error);
@@ -243,6 +306,6 @@ const WebcamCapturePhoto = ({ setPhotos, setCurrentPage, paperType, }) => {
                         initializeWebcam();
                     }, className: "bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded", children: "Try Again" })] }));
     }
-    return (_jsxs("div", { className: "flex flex-col items-center justify-center h-screen bg-gray-100", children: [_jsx("h1", { className: "text-3xl font-bold mb-4", children: "Capture Photos" }), _jsxs("p", { className: "mb-2", children: [capturedPhotos.length, " of ", requiredPhotos, " photos captured"] }), _jsx("p", { className: "mb-4 text-sm text-gray-600", children: "Using: Webcam" }), _jsxs("div", { className: "relative mb-4", children: [_jsx("video", { ref: videoRef, autoPlay: true, playsInline: true, className: "w-96 h-72 bg-black rounded" }), _jsx("canvas", { ref: canvasRef, className: "hidden" }), countdown !== null && (_jsx("div", { className: "absolute inset-0 flex items-center justify-center bg-black bg-opacity-50 rounded", children: _jsx("div", { className: "text-white text-8xl font-bold", children: countdown }) }))] }), !sessionStarted ? (_jsx("button", { onClick: startPhotoSession, className: "bg-blue-500 hover:bg-blue-700 text-white font-bold py-4 px-8 rounded-lg", children: "Start Photo Session" })) : (_jsx("div", { className: "text-center", children: isCapturing ? (_jsx("div", { className: "text-xl font-bold", children: "Capturing Photo..." })) : countdown !== null ? (_jsx("div", { className: "text-xl", children: "Get Ready!" })) : (_jsx("div", { className: "text-xl", children: "Processing..." })) }))] }));
+    return (_jsxs("div", { className: "flex flex-col items-center justify-center h-screen bg-gray-100", children: [_jsx("h1", { className: "text-3xl font-bold mb-4", children: "Capture Photos" }), _jsxs("p", { className: "mb-2", children: [displayPhotoCount, " of ", requiredPhotos, " photos captured"] }), _jsx("p", { className: "mb-4 text-sm text-gray-600", children: "Using: Webcam" }), _jsxs("div", { className: "relative mb-4", children: [_jsx("video", { ref: videoRef, autoPlay: true, playsInline: true, className: "w-96 h-72 bg-black rounded" }), _jsx("canvas", { ref: canvasRef, className: "hidden" }), countdown !== null && (_jsx("div", { className: "absolute inset-0 flex items-center justify-center bg-black bg-opacity-50 rounded", children: _jsx("div", { className: "text-white text-8xl font-bold", children: countdown }) })), isCapturing && (_jsx("div", { className: "absolute inset-0 flex items-center justify-center bg-white bg-opacity-80 rounded", children: _jsx("div", { className: "text-black text-2xl font-bold", children: "Capturing..." }) }))] }), !sessionStarted ? (_jsx("button", { onClick: startPhotoSession, className: "bg-blue-500 hover:bg-blue-700 text-white font-bold py-4 px-8 rounded-lg", children: "Start Photo Session" })) : (_jsx("div", { className: "text-center", children: isCapturing ? (_jsxs("div", { className: "text-xl font-bold", children: ["Capturing Photo ", Math.min(displayPhotoCount + 1, requiredPhotos), "..."] })) : countdown !== null ? (_jsxs("div", { className: "text-xl", children: ["Get Ready! Photo ", Math.min(displayPhotoCount + 1, requiredPhotos), " ", "of ", requiredPhotos] })) : isSessionComplete ? (_jsx("div", { className: "text-xl", children: "All photos captured! Moving to filters..." })) : displayPhotoCount < requiredPhotos ? (_jsx("div", { className: "text-xl", children: "Processing... Next photo coming up!" })) : (_jsx("div", { className: "text-xl", children: "All photos captured! Moving to filters..." })) }))] }));
 };
 export default WebcamCapturePhoto;

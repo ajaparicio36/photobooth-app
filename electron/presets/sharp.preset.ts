@@ -55,7 +55,7 @@ export const sharpPresets: Record<string, FilterPreset> = {
       hue: 15,
     },
     tint: { r: 255, g: 230, b: 180 },
-    gamma: 0.9,
+    gamma: 1.1,
   },
 
   coolBlue: {
@@ -79,7 +79,7 @@ export const sharpPresets: Record<string, FilterPreset> = {
       saturation: 0,
     },
     linear: { multiplier: 1.2, offset: -10 },
-    gamma: 0.95,
+    gamma: 1.05,
   },
 
   sepia: {
@@ -103,7 +103,7 @@ export const sharpPresets: Record<string, FilterPreset> = {
       hue: 5,
     },
     linear: { multiplier: 1.1, offset: 5 },
-    gamma: 0.95,
+    gamma: 1.05,
   },
 
   dreamy: {
@@ -154,7 +154,7 @@ export const sharpPresets: Record<string, FilterPreset> = {
       hue: 8,
     },
     tint: { r: 255, g: 245, b: 230 },
-    gamma: 0.95,
+    gamma: 1.05,
     linear: { multiplier: 1.05, offset: 3 },
   },
 

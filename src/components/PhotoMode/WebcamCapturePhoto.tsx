@@ -17,16 +17,26 @@ const WebcamCapturePhoto: React.FC<WebcamCapturePhotoProps> = ({
   const [countdown, setCountdown] = useState<number | null>(null);
   const [sessionStarted, setSessionStarted] = useState(false);
   const [webcamReady, setWebcamReady] = useState(false);
+  const [isSessionComplete, setIsSessionComplete] = useState(false);
+  const [displayPhotoCount, setDisplayPhotoCount] = useState(0);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const countdownTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const captureTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const photoIndexRef = useRef<number>(0);
+  const photosArrayRef = useRef<File[]>([]);
 
   const requiredPhotos = PAPER_TYPE_PHOTO_COUNT[paperType];
 
   useEffect(() => {
     setPhotos([]);
     setCapturedPhotos([]);
+    setIsSessionComplete(false);
+    photoIndexRef.current = 0;
+    photosArrayRef.current = [];
+    setDisplayPhotoCount(0);
     initializeWebcam();
 
     return () => {
@@ -34,8 +44,35 @@ const WebcamCapturePhoto: React.FC<WebcamCapturePhotoProps> = ({
       if (streamRef.current) {
         streamRef.current.getTracks().forEach((track) => track.stop());
       }
+      clearAllTimers();
     };
   }, []);
+
+  // Effect to handle session completion
+  useEffect(() => {
+    if (isSessionComplete && photosArrayRef.current.length >= requiredPhotos) {
+      // Update parent with all photos
+      setPhotos(photosArrayRef.current);
+
+      // Navigate to next page after a brief delay
+      const navigationTimer = setTimeout(() => {
+        setCurrentPage(PhotoModePage.SelectFilterPage);
+      }, 1000);
+
+      return () => clearTimeout(navigationTimer);
+    }
+  }, [isSessionComplete, requiredPhotos, setPhotos, setCurrentPage]);
+
+  const clearAllTimers = () => {
+    if (countdownTimerRef.current) {
+      clearTimeout(countdownTimerRef.current);
+      countdownTimerRef.current = null;
+    }
+    if (captureTimeoutRef.current) {
+      clearTimeout(captureTimeoutRef.current);
+      captureTimeoutRef.current = null;
+    }
+  };
 
   const initializeWebcam = async () => {
     try {
@@ -213,27 +250,47 @@ const WebcamCapturePhoto: React.FC<WebcamCapturePhotoProps> = ({
 
   const startPhotoSession = () => {
     setSessionStarted(true);
+    photoIndexRef.current = 0;
+    photosArrayRef.current = [];
+    setCapturedPhotos([]);
+    setDisplayPhotoCount(0);
+    setIsSessionComplete(false);
     startCountdown(5);
   };
 
   const startCountdown = (seconds: number) => {
+    // Clear any existing timers
+    clearAllTimers();
+
     setCountdown(seconds);
 
     if (seconds <= 0) {
-      setTimeout(capturePhoto, 100);
+      captureTimeoutRef.current = setTimeout(() => {
+        capturePhoto();
+      }, 100);
       return;
     }
 
-    setTimeout(() => {
+    countdownTimerRef.current = setTimeout(() => {
       startCountdown(seconds - 1);
     }, 1000);
   };
 
   const capturePhoto = async () => {
-    if (isCapturing || !videoRef.current || !canvasRef.current) return;
+    if (isCapturing || !videoRef.current || !canvasRef.current) {
+      console.log("Capture blocked - already capturing or refs not ready");
+      return;
+    }
+
+    // Check if we already have enough photos using ref
+    if (photoIndexRef.current >= requiredPhotos) {
+      console.log("Already have enough photos, stopping capture");
+      return;
+    }
 
     setIsCapturing(true);
     setCountdown(null);
+    clearAllTimers();
 
     try {
       const canvas = canvasRef.current;
@@ -248,34 +305,54 @@ const WebcamCapturePhoto: React.FC<WebcamCapturePhotoProps> = ({
         canvas.toBlob((blob) => resolve(blob!), "image/jpeg", 0.9);
       });
 
-      // Use functional state update to ensure we have the latest state
-      setCapturedPhotos((prevPhotos) => {
-        const photoFile = new File(
-          [blob],
-          `photo_${prevPhotos.length + 1}.jpg`,
-          { type: "image/jpeg" }
-        );
-
-        const newPhotos = [...prevPhotos, photoFile];
-
-        console.log(
-          `Webcam Photo ${newPhotos.length} captured. Total needed: ${requiredPhotos}`
-        );
-        console.log("Previous photos count:", prevPhotos.length);
-        console.log("New photos count:", newPhotos.length);
-
-        // Check if we have all required photos
-        if (newPhotos.length >= requiredPhotos) {
-          // All photos captured, move to next page
-          setPhotos(newPhotos);
-          setCurrentPage(PhotoModePage.SelectFilterPage);
-        } else {
-          // More photos needed, start countdown for next photo
-          setTimeout(() => startCountdown(5), 1500);
+      const photoFile = new File(
+        [blob],
+        `photo_${photoIndexRef.current + 1}.jpg`,
+        {
+          type: "image/jpeg",
         }
+      );
 
-        return newPhotos;
-      });
+      // Update refs immediately
+      photosArrayRef.current = [...photosArrayRef.current, photoFile];
+      photoIndexRef.current = photoIndexRef.current + 1;
+
+      // Update display states
+      setCapturedPhotos(photosArrayRef.current);
+      setDisplayPhotoCount(photoIndexRef.current);
+
+      console.log(
+        `Webcam Photo ${photosArrayRef.current.length} captured. Total needed: ${requiredPhotos}`
+      );
+      console.log(
+        `Photo index is now: ${photoIndexRef.current} of ${requiredPhotos}`
+      );
+
+      // Check if we have all required photos using the updated ref
+      if (photoIndexRef.current >= requiredPhotos) {
+        // All photos captured - mark session as complete
+        console.log("All photos captured, completing session");
+        setIsSessionComplete(true);
+        clearAllTimers();
+      } else {
+        // More photos needed, start countdown for next photo after delay
+        console.log(
+          `Need ${requiredPhotos - photoIndexRef.current} more photos`
+        );
+        captureTimeoutRef.current = setTimeout(() => {
+          // Use ref value for accurate check
+          if (photoIndexRef.current < requiredPhotos && !isCapturing) {
+            console.log(
+              `Starting countdown for photo ${photoIndexRef.current + 1}`
+            );
+            startCountdown(5);
+          } else {
+            console.log(
+              "Skipping countdown - already have enough photos or still capturing"
+            );
+          }
+        }, 2000);
+      }
     } catch (error) {
       console.error("Webcam capture failed:", error);
       alert("Failed to capture photo with webcam.");
@@ -336,7 +413,7 @@ const WebcamCapturePhoto: React.FC<WebcamCapturePhotoProps> = ({
     <div className="flex flex-col items-center justify-center h-screen bg-gray-100">
       <h1 className="text-3xl font-bold mb-4">Capture Photos</h1>
       <p className="mb-2">
-        {capturedPhotos.length} of {requiredPhotos} photos captured
+        {displayPhotoCount} of {requiredPhotos} photos captured
       </p>
       <p className="mb-4 text-sm text-gray-600">Using: Webcam</p>
 
@@ -354,6 +431,12 @@ const WebcamCapturePhoto: React.FC<WebcamCapturePhotoProps> = ({
             <div className="text-white text-8xl font-bold">{countdown}</div>
           </div>
         )}
+
+        {isCapturing && (
+          <div className="absolute inset-0 flex items-center justify-center bg-white bg-opacity-80 rounded">
+            <div className="text-black text-2xl font-bold">Capturing...</div>
+          </div>
+        )}
       </div>
 
       {!sessionStarted ? (
@@ -366,11 +449,25 @@ const WebcamCapturePhoto: React.FC<WebcamCapturePhotoProps> = ({
       ) : (
         <div className="text-center">
           {isCapturing ? (
-            <div className="text-xl font-bold">Capturing Photo...</div>
+            <div className="text-xl font-bold">
+              Capturing Photo {Math.min(displayPhotoCount + 1, requiredPhotos)}
+              ...
+            </div>
           ) : countdown !== null ? (
-            <div className="text-xl">Get Ready!</div>
+            <div className="text-xl">
+              Get Ready! Photo {Math.min(displayPhotoCount + 1, requiredPhotos)}{" "}
+              of {requiredPhotos}
+            </div>
+          ) : isSessionComplete ? (
+            <div className="text-xl">
+              All photos captured! Moving to filters...
+            </div>
+          ) : displayPhotoCount < requiredPhotos ? (
+            <div className="text-xl">Processing... Next photo coming up!</div>
           ) : (
-            <div className="text-xl">Processing...</div>
+            <div className="text-xl">
+              All photos captured! Moving to filters...
+            </div>
           )}
         </div>
       )}
