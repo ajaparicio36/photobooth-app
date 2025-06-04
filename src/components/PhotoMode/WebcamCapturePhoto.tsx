@@ -1,10 +1,16 @@
 import { PaperType, PhotoModePage, PAPER_TYPE_PHOTO_COUNT } from "@/lib/enums";
-import React, { useState, useRef, useEffect } from "react";
+import React, {
+  useState,
+  useRef,
+  useEffect,
+  useCallback,
+  useLayoutEffect,
+} from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
-import { Camera, Timer, CheckCircle, Loader2 } from "lucide-react";
+import { Camera, Timer, CheckCircle, Loader2, AlertCircle } from "lucide-react";
 
 interface WebcamCapturePhotoProps {
   setPhotos: (photos: File[]) => void;
@@ -22,6 +28,10 @@ const WebcamCapturePhoto: React.FC<WebcamCapturePhotoProps> = ({
   const [countdown, setCountdown] = useState<number | null>(null);
   const [sessionStarted, setSessionStarted] = useState(false);
   const [webcamReady, setWebcamReady] = useState(false);
+  const [webcamError, setWebcamError] = useState<string | null>(null);
+  // isInitializing now refers to the component's general loading state
+  const [isInitializing, setIsInitializing] = useState(true);
+  const [isWebcamInitInProgress, setIsWebcamInitInProgress] = useState(false);
   const [isSessionComplete, setIsSessionComplete] = useState(false);
   const [displayPhotoCount, setDisplayPhotoCount] = useState(0);
 
@@ -32,26 +42,243 @@ const WebcamCapturePhoto: React.FC<WebcamCapturePhotoProps> = ({
   const captureTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const photoIndexRef = useRef<number>(0);
   const photosArrayRef = useRef<File[]>([]);
+  const isInitializedRef = useRef<boolean>(false); // Tracks if an initialization attempt has been made / succeeded
 
   const requiredPhotos = PAPER_TYPE_PHOTO_COUNT[paperType];
 
+  // Cleanup function
+  const cleanup = useCallback(() => {
+    console.log("Cleaning up webcam resources...");
+
+    // Clear all timers
+    if (countdownTimerRef.current) {
+      clearTimeout(countdownTimerRef.current);
+      countdownTimerRef.current = null;
+    }
+    if (captureTimeoutRef.current) {
+      clearTimeout(captureTimeoutRef.current);
+      captureTimeoutRef.current = null;
+    }
+
+    // Stop media stream
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => {
+        console.log("Stopping track:", track.kind, track.label);
+        track.stop();
+      });
+      streamRef.current = null;
+    }
+
+    // Clear video element
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+  }, []);
+
+  // Simplified webcam initialization - back to what worked
+  const initializeWebcam = useCallback(async () => {
+    if (isInitializedRef.current && webcamReady) {
+      console.log("Webcam already initialized and ready.");
+      return;
+    }
+    // Prevent re-entry if an attempt is ongoing or just completed successfully
+    if (isInitializedRef.current && !webcamError) {
+      console.log(
+        "Initialization attempt already made/successful and no error."
+      );
+      return;
+    }
+
+    console.log("Attempting to initialize webcam...");
+    isInitializedRef.current = true; // Mark that an attempt is starting
+    setIsWebcamInitInProgress(true);
+    setWebcamError(null);
+    // setWebcamReady(false); // Keep existing ready state until success/failure
+
+    if (!videoRef.current) {
+      console.error(
+        "initializeWebcam: videoRef.current is null. Cannot proceed."
+      );
+      setWebcamError(
+        "Camera preview element not found. Please refresh or try again."
+      );
+      setIsWebcamInitInProgress(false);
+      isInitializedRef.current = false; // Reset, so retry is possible
+      return;
+    }
+
+    try {
+      // Clean up any existing stream first
+      cleanup();
+
+      // Check if getUserMedia is available
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error("Camera access not supported in this browser");
+      }
+
+      console.log("Requesting webcam access...");
+
+      // Simple constraints first
+      const constraints = {
+        video: {
+          width: { ideal: 640, max: 1280 },
+          height: { ideal: 480, max: 720 },
+        },
+      };
+
+      let stream: MediaStream;
+
+      try {
+        stream = await navigator.mediaDevices.getUserMedia(constraints);
+      } catch (error) {
+        console.log("Detailed constraints failed, trying basic:", error);
+        // Fallback to basic constraints
+        stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      }
+
+      console.log("Webcam stream obtained:", stream);
+      streamRef.current = stream;
+
+      if (!videoRef.current) {
+        // Re-check after await
+        throw new Error("Video element became null during stream acquisition.");
+      }
+      videoRef.current.srcObject = stream;
+      videoRef.current.muted = true;
+      videoRef.current.playsInline = true;
+
+      // Wait for video to be ready and play
+      await new Promise<void>((resolve, reject) => {
+        if (!videoRef.current) {
+          reject(new Error("Video element became null before play."));
+          return;
+        }
+        const currentVideoEl = videoRef.current;
+        const onCanPlay = () => {
+          currentVideoEl
+            .play()
+            .then(() => {
+              console.log("Video playing successfully via event");
+              resolve();
+            })
+            .catch((err) => {
+              console.error("Error playing video:", err);
+              reject(err);
+            });
+          // Clean up event listeners
+          currentVideoEl.removeEventListener("canplay", onCanPlay);
+          currentVideoEl.removeEventListener("error", onError);
+        };
+        const onError = (e: Event) => {
+          console.error("Video element error during loading:", e);
+          reject(new Error("Video element error."));
+          // Clean up event listeners
+          currentVideoEl.removeEventListener("canplay", onCanPlay);
+          currentVideoEl.removeEventListener("error", onError);
+        };
+
+        currentVideoEl.addEventListener("canplay", onCanPlay);
+        currentVideoEl.addEventListener("error", onError);
+
+        // Timeout for safety
+        setTimeout(() => {
+          currentVideoEl.removeEventListener("canplay", onCanPlay);
+          currentVideoEl.removeEventListener("error", onError);
+          reject(new Error("Timeout waiting for video to be playable."));
+        }, 5000); // 5 seconds timeout
+
+        // If video is already playable (e.g. srcObject set quickly)
+        if (currentVideoEl.readyState >= HTMLMediaElement.HAVE_ENOUGH_DATA) {
+          console.log("Video already playable, attempting to play.");
+          onCanPlay();
+        }
+      });
+
+      console.log("Webcam initialized and video playing.");
+      setWebcamReady(true);
+      setWebcamError(null);
+      // isInitializedRef.current remains true (successful attempt)
+    } catch (error: any) {
+      console.error("Failed to initialize webcam:", error);
+      setWebcamError(error.message || "Failed to access camera.");
+      setWebcamReady(false);
+      isInitializedRef.current = false; // Allow retry on error
+      cleanup(); // Ensure cleanup on failure
+    } finally {
+      setIsWebcamInitInProgress(false);
+    }
+  }, [cleanup]);
+
+  // Effect for one-time setup and cleanup on unmount
   useEffect(() => {
+    console.log(
+      "WebcamCapturePhoto mounted: resetting states for main lifecycle."
+    );
     setPhotos([]);
     setCapturedPhotos([]);
+    setIsCapturing(false);
+    setCountdown(null);
+    setSessionStarted(false);
+    setWebcamReady(false);
+    setWebcamError(null);
+    setIsInitializing(true); // Start in a general loading state for the component
+    setIsWebcamInitInProgress(false);
     setIsSessionComplete(false);
+    setDisplayPhotoCount(0);
+
     photoIndexRef.current = 0;
     photosArrayRef.current = [];
-    setDisplayPhotoCount(0);
-    initializeWebcam();
+    isInitializedRef.current = false; // Crucial reset
+
+    // Transition out of the general loading state, allowing UI with video tag to render
+    const initialLoadTimer = setTimeout(() => {
+      setIsInitializing(false);
+    }, 200); // Delay for DOM readiness
 
     return () => {
-      // Cleanup on unmount
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach((track) => track.stop());
-      }
+      console.log("WebcamCapturePhoto unmounting: cleaning up.");
+      clearTimeout(initialLoadTimer);
       clearAllTimers();
+      cleanup();
+      isInitializedRef.current = false;
     };
-  }, []);
+  }, [setPhotos, cleanup]);
+
+  // Effect to initialize webcam once videoRef is available and component is not in initial loading
+  useLayoutEffect(() => {
+    if (
+      !isInitializing &&
+      !webcamError &&
+      videoRef.current &&
+      !isInitializedRef.current &&
+      !isWebcamInitInProgress
+    ) {
+      console.log("useLayoutEffect: Conditions met, calling initializeWebcam.");
+      initializeWebcam();
+    } else {
+      if (isInitializing)
+        console.log(
+          "useLayoutEffect: Skipping webcam init, component is still in general loading."
+        );
+      if (webcamError)
+        console.log(
+          "useLayoutEffect: Skipping webcam init, webcamError exists:",
+          webcamError
+        );
+      if (!videoRef.current)
+        console.log(
+          "useLayoutEffect: Skipping webcam init, videoRef is not current."
+        );
+      if (isInitializedRef.current)
+        console.log(
+          "useLayoutEffect: Skipping webcam init, an attempt was already made/is successful."
+        );
+      if (isWebcamInitInProgress)
+        console.log(
+          "useLayoutEffect: Skipping webcam init, webcam initialization is already in progress."
+        );
+    }
+  }, [isInitializing, webcamError, initializeWebcam, isWebcamInitInProgress]);
 
   // Effect to handle session completion
   useEffect(() => {
@@ -79,180 +306,6 @@ const WebcamCapturePhoto: React.FC<WebcamCapturePhotoProps> = ({
     }
   };
 
-  const initializeWebcam = async () => {
-    try {
-      console.log("Requesting webcam access...");
-
-      // Simple constraints first
-      const constraints = {
-        video: {
-          width: { ideal: 640, max: 1280 },
-          height: { ideal: 480, max: 720 },
-        },
-      };
-
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
-      console.log("Webcam stream obtained:", stream);
-      console.log("Stream tracks:", stream.getTracks());
-
-      streamRef.current = stream;
-
-      if (videoRef.current) {
-        console.log("Setting up video element...");
-        console.log(
-          "Video element readyState before:",
-          videoRef.current.readyState
-        );
-
-        videoRef.current.srcObject = stream;
-
-        // Set video properties
-        videoRef.current.muted = true;
-        videoRef.current.playsInline = true;
-        videoRef.current.autoplay = true;
-
-        console.log(
-          "Video element readyState after srcObject:",
-          videoRef.current.readyState
-        );
-
-        // Simple approach: just wait a bit and set ready
-        setTimeout(() => {
-          console.log("Timeout reached, checking video state...");
-          if (videoRef.current) {
-            console.log("Video readyState:", videoRef.current.readyState);
-            console.log("Video videoWidth:", videoRef.current.videoWidth);
-            console.log("Video videoHeight:", videoRef.current.videoHeight);
-            console.log("Video paused:", videoRef.current.paused);
-            console.log("Video ended:", videoRef.current.ended);
-
-            // Try to play manually
-            videoRef.current
-              .play()
-              .then(() => {
-                console.log("Manual play successful");
-                setWebcamReady(true);
-              })
-              .catch((playError) => {
-                console.log("Manual play failed:", playError);
-                // Set ready anyway
-                setWebcamReady(true);
-              });
-          }
-        }, 2000);
-
-        // Also try the event-based approach
-        const handleVideoReady = async () => {
-          console.log("Video ready event triggered");
-          if (!webcamReady) {
-            try {
-              if (videoRef.current) {
-                await videoRef.current.play();
-                console.log("Video playing successfully via event");
-              }
-            } catch (playError) {
-              console.log("Play failed but continuing:", playError);
-            }
-            setWebcamReady(true);
-          }
-        };
-
-        // Add all possible event listeners
-        videoRef.current.addEventListener("loadstart", () =>
-          console.log("Video loadstart")
-        );
-        videoRef.current.addEventListener("loadedmetadata", () => {
-          console.log("Video loadedmetadata");
-          handleVideoReady();
-        });
-        videoRef.current.addEventListener("loadeddata", () => {
-          console.log("Video loadeddata");
-          if (!webcamReady) handleVideoReady();
-        });
-        videoRef.current.addEventListener("canplay", () => {
-          console.log("Video canplay");
-          if (!webcamReady) handleVideoReady();
-        });
-        videoRef.current.addEventListener("canplaythrough", () => {
-          console.log("Video canplaythrough");
-          if (!webcamReady) handleVideoReady();
-        });
-        videoRef.current.addEventListener("playing", () => {
-          console.log("Video playing event");
-          if (!webcamReady) setWebcamReady(true);
-        });
-
-        videoRef.current.onerror = (error) => {
-          console.error("Video element error:", error);
-          setWebcamReady(true); // Set ready even on error
-        };
-
-        // Immediate check if video is already ready
-        if (videoRef.current.readyState >= 1) {
-          console.log(
-            "Video already has metadata, readyState:",
-            videoRef.current.readyState
-          );
-          handleVideoReady();
-        }
-      } else {
-        console.error("videoRef.current is null!");
-        setWebcamReady(true);
-      }
-    } catch (error) {
-      console.error("Failed to initialize webcam:", error);
-
-      // More specific error handling
-      if (error instanceof DOMException) {
-        console.log("DOMException name:", error.name);
-        console.log("DOMException message:", error.message);
-
-        switch (error.name) {
-          case "NotAllowedError":
-            alert(
-              "Camera access denied. Please allow camera permissions and try again."
-            );
-            break;
-          case "NotFoundError":
-            alert("No camera found. Please connect a camera and try again.");
-            break;
-          case "NotReadableError":
-            alert(
-              "Camera is being used by another application. Please close other camera apps and try again."
-            );
-            break;
-          case "OverconstrainedError":
-            console.log(
-              "Constraints too restrictive, trying basic constraints..."
-            );
-            // Try with minimal constraints
-            try {
-              const basicStream = await navigator.mediaDevices.getUserMedia({
-                video: true,
-              });
-              streamRef.current = basicStream;
-              if (videoRef.current) {
-                videoRef.current.srcObject = basicStream;
-                await videoRef.current.play();
-              }
-              setWebcamReady(true);
-              return;
-            } catch (basicError) {
-              alert("Failed to access camera with basic settings.");
-            }
-            break;
-          default:
-            alert(`Camera error: ${error.message}`);
-        }
-      } else {
-        alert("Failed to access webcam. Please check your camera permissions.");
-      }
-
-      // Always set ready to prevent infinite loading
-      setWebcamReady(true);
-    }
-  };
-
   const startPhotoSession = () => {
     setSessionStarted(true);
     photoIndexRef.current = 0;
@@ -266,6 +319,12 @@ const WebcamCapturePhoto: React.FC<WebcamCapturePhotoProps> = ({
   const startCountdown = (seconds: number) => {
     // Clear any existing timers
     clearAllTimers();
+
+    if (!webcamReady) {
+      console.warn("Cannot start countdown, webcam not ready.");
+      setWebcamError("Webcam is not ready. Please try again.");
+      return;
+    }
 
     setCountdown(seconds);
 
@@ -282,8 +341,17 @@ const WebcamCapturePhoto: React.FC<WebcamCapturePhotoProps> = ({
   };
 
   const capturePhoto = async () => {
-    if (isCapturing || !videoRef.current || !canvasRef.current) {
-      console.log("Capture blocked - already capturing or refs not ready");
+    if (
+      isCapturing ||
+      !videoRef.current ||
+      !canvasRef.current ||
+      !webcamReady
+    ) {
+      console.log(
+        "Capture blocked - already capturing, refs not ready, or webcam not ready"
+      );
+      if (!webcamReady)
+        setWebcamError("Cannot capture photo, webcam is not ready.");
       return;
     }
 
@@ -368,7 +436,8 @@ const WebcamCapturePhoto: React.FC<WebcamCapturePhotoProps> = ({
 
   const progress = (displayPhotoCount / requiredPhotos) * 100;
 
-  if (!webcamReady) {
+  // Loading state
+  if (isInitializing) {
     return (
       <div className="min-h-screen mono-gradient flex items-center justify-center p-6">
         <Card className="glass-card max-w-md w-full">
@@ -377,61 +446,65 @@ const WebcamCapturePhoto: React.FC<WebcamCapturePhotoProps> = ({
               <Loader2 className="w-8 h-8 text-mono-900 animate-spin" />
             </div>
             <h2 className="text-2xl font-bold text-mono-900 mb-3">
-              Initializing Webcam
+              Loading Photo Session
             </h2>
-            <p className="text-mono-600 mb-6">
-              Please allow camera access if prompted
+            <p className="text-mono-600 mb-4">
+              Preparing camera and interface...
             </p>
-            <Button
-              onClick={() => {
-                console.log("Manual retry clicked");
-                setWebcamReady(false);
-                initializeWebcam();
-              }}
-              className="w-full bg-mono-900 hover:bg-mono-800 text-white"
-            >
-              <Camera className="w-4 h-4 mr-2" />
-              Retry Webcam
-            </Button>
           </CardContent>
         </Card>
       </div>
     );
   }
 
-  const hasValidStream =
-    streamRef.current && streamRef.current.getTracks().length > 0;
-
-  if (!hasValidStream) {
+  // Error state
+  if (webcamError) {
     return (
       <div className="min-h-screen mono-gradient flex items-center justify-center p-6">
         <Card className="glass-card max-w-md w-full">
           <CardContent className="p-8 text-center">
             <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-red-100 flex items-center justify-center">
-              <Camera className="w-8 h-8 text-red-600" />
+              <AlertCircle className="w-8 h-8 text-red-600" />
             </div>
             <h2 className="text-2xl font-bold text-mono-900 mb-3">
-              Webcam Not Available
+              Camera Error
             </h2>
-            <p className="text-mono-600 mb-6">
-              Failed to access webcam. Please check your camera permissions.
+            <p className="text-mono-600 mb-6 text-sm leading-relaxed">
+              {webcamError}
             </p>
-            <Button
-              onClick={() => {
-                setWebcamReady(false);
-                initializeWebcam();
-              }}
-              className="w-full bg-mono-900 hover:bg-mono-800 text-white"
-            >
-              <Camera className="w-4 h-4 mr-2" />
-              Try Again
-            </Button>
+            <div className="space-y-3">
+              <Button
+                onClick={() => {
+                  console.log("Try Again clicked.");
+                  setWebcamError(null); // Clear the error
+                  setIsWebcamInitInProgress(false); // Reset progress flag
+                  isInitializedRef.current = false; // Signal that we need to re-initialize
+                  // State updates will trigger a re-render.
+                  // useLayoutEffect will then run and attempt to initialize the webcam
+                  // if conditions (like videoRef.current being available) are met.
+                }}
+                className="w-full bg-mono-900 hover:bg-mono-800 text-white"
+              >
+                <Camera className="w-4 h-4 mr-2" />
+                Try Again
+              </Button>
+              <Button
+                onClick={() => window.location.reload()}
+                variant="outline"
+                className="w-full"
+              >
+                Refresh Page
+              </Button>
+            </div>
           </CardContent>
         </Card>
       </div>
     );
   }
 
+  // Main UI - Renders if not in general loading and no critical error
+  // Video element is always part of this structure if we reach here.
+  // Webcam readiness (webcamReady) determines interactivity.
   return (
     <div className="h-screen mono-gradient flex flex-col overflow-hidden">
       {/* Header */}
@@ -453,40 +526,52 @@ const WebcamCapturePhoto: React.FC<WebcamCapturePhotoProps> = ({
       <div className="flex-1 flex items-center justify-center p-4 min-h-0">
         <div className="max-w-2xl w-full h-full flex flex-col">
           {/* Progress Bar */}
-          <Card className="glass-card mb-4 flex-shrink-0">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <Camera className="w-4 h-4 text-mono-700" />
-                  <span className="font-semibold text-mono-900 text-sm">
-                    Progress
+          {sessionStarted && (
+            <Card className="glass-card mb-4 flex-shrink-0">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <Camera className="w-4 h-4 text-mono-700" />
+                    <span className="font-semibold text-mono-900 text-sm">
+                      Progress
+                    </span>
+                  </div>
+                  <span className="text-xs text-mono-600">
+                    {Math.round(progress)}% Complete
                   </span>
                 </div>
-                <span className="text-xs text-mono-600">
-                  {Math.round(progress)}% Complete
-                </span>
-              </div>
-              <Progress value={progress} className="h-2 mb-1" />
-              <div className="text-xs text-mono-600">
-                Photo {Math.min(displayPhotoCount + 1, requiredPhotos)} of{" "}
-                {requiredPhotos}
-              </div>
-            </CardContent>
-          </Card>
+                <Progress value={progress} className="h-2 mb-1" />
+                <div className="text-xs text-mono-600">
+                  Photo {Math.min(displayPhotoCount + 1, requiredPhotos)} of{" "}
+                  {requiredPhotos}
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
-          {/* Webcam Preview */}
+          {/* Webcam Preview - Simplified */}
           <Card className="glass-card mb-4 flex-1 min-h-0">
             <CardContent className="p-4 h-full">
               <div className="relative h-full">
                 <video
                   ref={videoRef}
-                  autoPlay
+                  // autoPlay // Programmatic play in initializeWebcam
                   playsInline
-                  className="capture-frame w-full h-full object-cover rounded-lg"
+                  muted
+                  className="capture-frame w-full h-full object-cover rounded-lg bg-black"
                 />
                 <canvas ref={canvasRef} className="hidden" />
 
-                {countdown !== null && (
+                {(!webcamReady || isWebcamInitInProgress) && !webcamError && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-lg">
+                    <div className="text-center text-white">
+                      <Loader2 className="w-8 h-8 mx-auto mb-2 animate-spin" />
+                      <p>Starting camera...</p>
+                    </div>
+                  </div>
+                )}
+
+                {webcamReady && countdown !== null && (
                   <div className="countdown-overlay">
                     <div className="text-center animate-pulse">
                       <div className="text-6xl font-bold text-white mb-2">
@@ -497,7 +582,7 @@ const WebcamCapturePhoto: React.FC<WebcamCapturePhotoProps> = ({
                   </div>
                 )}
 
-                {isCapturing && (
+                {webcamReady && isCapturing && (
                   <div className="countdown-overlay">
                     <div className="text-center">
                       <div className="w-12 h-12 mx-auto mb-2 rounded-full bg-white/20 flex items-center justify-center">
@@ -531,6 +616,9 @@ const WebcamCapturePhoto: React.FC<WebcamCapturePhotoProps> = ({
                     onClick={startPhotoSession}
                     size="lg"
                     className="bg-mono-900 hover:bg-mono-800 text-white px-6 py-3"
+                    disabled={
+                      !webcamReady || isCapturing || isWebcamInitInProgress
+                    }
                   >
                     <Camera className="w-4 h-4 mr-2" />
                     Start Photo Session
