@@ -13,6 +13,16 @@ export interface SharpFilterOptions {
   grayscale?: boolean;
 }
 
+export enum PaperType {
+  TwoBySix = "2x6",
+  FourBySix = "4x6",
+}
+
+export const PAPER_TYPE_PHOTO_COUNT = {
+  [PaperType.TwoBySix]: 2,
+  [PaperType.FourBySix]: 4,
+};
+
 export interface CollageOptions {
   spacing?: number; // Default: 10px for A6
   backgroundColor?: string;
@@ -22,6 +32,7 @@ export interface CollageOptions {
     | "bottom-left"
     | "bottom-right"
     | "top-center";
+  paperType?: PaperType; // Default: A6
   logoSize?: number; // Default: 60px for A6
   paperSize?: "A6" | "A5" | "A4"; // Default: A6
   orientation?: "portrait" | "landscape"; // Default: portrait for A6

@@ -4,6 +4,8 @@ import { isDev } from "./util";
 import { cameraManager } from "./utils/camera";
 import { printerManager } from "./utils/printer";
 import { sharpManager } from "./utils/sharp";
+import * as fs from "fs";
+import * as os from "os";
 
 app.commandLine.appendSwitch("disable-web-security");
 
@@ -248,6 +250,55 @@ ipcMain.handle(
     }
   }
 );
+
+ipcMain.handle(
+  "generate-print-pdf",
+  async (_, imagePaths: string[], outputPath: string, options: any) => {
+    try {
+      // Use sharp manager to generate print-ready PDF
+      return await sharpManager.generatePrintPDF(
+        imagePaths,
+        outputPath,
+        options
+      );
+    } catch (error) {
+      console.error("Failed to generate print PDF:", error);
+      throw error;
+    }
+  }
+);
+
+// File operation handlers
+ipcMain.handle("save-file", async (_, data: any, filePath: string) => {
+  try {
+    await fs.promises.writeFile(filePath, Buffer.from(data));
+    return { success: true, path: filePath };
+  } catch (error) {
+    console.error("Failed to save file:", error);
+    throw error;
+  }
+});
+
+ipcMain.handle("read-file", async (_, filePath: string) => {
+  try {
+    const data = await fs.promises.readFile(filePath);
+    return data;
+  } catch (error) {
+    console.error("Failed to read file:", error);
+    throw error;
+  }
+});
+
+ipcMain.handle("create-temp-file", async (_, data: any, extension: string) => {
+  try {
+    const tempPath = path.join(os.tmpdir(), `temp_${Date.now()}.${extension}`);
+    await fs.promises.writeFile(tempPath, Buffer.from(data));
+    return { success: true, path: tempPath };
+  } catch (error) {
+    console.error("Failed to create temp file:", error);
+    throw error;
+  }
+});
 
 app.whenReady().then(createWindow);
 

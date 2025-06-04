@@ -161,8 +161,14 @@ export class SharpManager {
         }
       }
 
-      if (imagePaths.length !== 4) {
-        throw new Error("Exactly 4 images are required for collage");
+      // Handle different paper types
+      const is2x6Layout = options.paperType === "2x6";
+      const expectedImageCount = is2x6Layout ? 4 : 4; // 2x6 = 2 photos duplicated = 4 total, 4x6 = 4 photos
+
+      if (imagePaths.length !== expectedImageCount) {
+        throw new Error(
+          `Expected ${expectedImageCount} images for ${options.paperType} layout, got ${imagePaths.length}`
+        );
       }
 
       const {
@@ -174,72 +180,122 @@ export class SharpManager {
       } = options;
 
       // A6 dimensions: 105mm x 148mm at 300 DPI = 1240px x 1748px
-      // We'll use a slightly smaller canvas to ensure proper margins
-      const canvasWidth = 1200; // A6 width with margins
-      const canvasHeight = 1700; // A6 height with margins
+      const canvasWidth = 1200;
+      const canvasHeight = 1700;
 
-      // Calculate photo dimensions for 2x2 grid
-      // Each photo should be landscape (3:2 aspect ratio) fitting in available space
-      const availableWidth = (canvasWidth - spacing * 3) / 2; // 2 photos per row, 3 spacing gaps
-      const availableHeight = (canvasHeight - spacing * 4 - logoSize) / 2; // 2 rows, 4 spacing gaps, logo space
-
-      // For landscape photos (3:2 aspect ratio), determine size based on available space
       let photoWidth: number;
       let photoHeight: number;
+      let composition: any[];
 
-      const targetAspectRatio = 3 / 2; // Landscape DSLR ratio
+      if (is2x6Layout) {
+        // For 2x6: 2 photos side by side, each photo appears twice (4 total images)
+        // Use the first 2 unique images, place them side by side twice
+        const uniqueImages = imagePaths.slice(0, 2);
 
-      if (availableWidth / availableHeight > targetAspectRatio) {
-        // Height is the limiting factor
-        photoHeight = availableHeight;
-        photoWidth = photoHeight * targetAspectRatio;
+        const availableWidth = (canvasWidth - spacing * 3) / 2;
+        const availableHeight = (canvasHeight - spacing * 3 - logoSize) / 2;
+
+        const targetAspectRatio = 3 / 2;
+
+        if (availableWidth / availableHeight > targetAspectRatio) {
+          photoHeight = availableHeight;
+          photoWidth = photoHeight * targetAspectRatio;
+        } else {
+          photoWidth = availableWidth;
+          photoHeight = photoWidth / targetAspectRatio;
+        }
+
+        photoWidth = Math.floor(photoWidth);
+        photoHeight = Math.floor(photoHeight);
+
+        const resizedImages = await Promise.all(
+          uniqueImages.map(async (imgPath) => {
+            return await sharp(imgPath)
+              .resize(photoWidth, photoHeight, {
+                fit: "cover",
+                position: "center",
+              })
+              .toBuffer();
+          })
+        );
+
+        const startX = Math.floor(
+          (canvasWidth - (photoWidth * 2 + spacing)) / 2
+        );
+        const topRowY = Math.floor(
+          (canvasHeight - (photoHeight * 2 + spacing) - logoSize) / 4
+        );
+        const bottomRowY = topRowY + photoHeight + spacing;
+
+        composition = [
+          // Top row
+          { input: resizedImages[0], left: startX, top: topRowY },
+          {
+            input: resizedImages[1],
+            left: startX + photoWidth + spacing,
+            top: topRowY,
+          },
+          // Bottom row (duplicate)
+          { input: resizedImages[0], left: startX, top: bottomRowY },
+          {
+            input: resizedImages[1],
+            left: startX + photoWidth + spacing,
+            top: bottomRowY,
+          },
+        ];
       } else {
-        // Width is the limiting factor
-        photoWidth = availableWidth;
-        photoHeight = photoWidth / targetAspectRatio;
+        // For 4x6: 2x2 grid of 4 different photos
+        const availableWidth = (canvasWidth - spacing * 3) / 2;
+        const availableHeight = (canvasHeight - spacing * 4 - logoSize) / 2;
+
+        const targetAspectRatio = 3 / 2;
+
+        if (availableWidth / availableHeight > targetAspectRatio) {
+          photoHeight = availableHeight;
+          photoWidth = photoHeight * targetAspectRatio;
+        } else {
+          photoWidth = availableWidth;
+          photoHeight = photoWidth / targetAspectRatio;
+        }
+
+        photoWidth = Math.floor(photoWidth);
+        photoHeight = Math.floor(photoHeight);
+
+        const resizedImages = await Promise.all(
+          imagePaths.map(async (imgPath) => {
+            return await sharp(imgPath)
+              .resize(photoWidth, photoHeight, {
+                fit: "cover",
+                position: "center",
+              })
+              .toBuffer();
+          })
+        );
+
+        const gridWidth = photoWidth * 2 + spacing;
+        const gridHeight = photoHeight * 2 + spacing;
+        const startX = Math.floor((canvasWidth - gridWidth) / 2);
+        const startY = Math.floor((canvasHeight - gridHeight - logoSize) / 2);
+
+        composition = [
+          { input: resizedImages[0], left: startX, top: startY },
+          {
+            input: resizedImages[1],
+            left: startX + photoWidth + spacing,
+            top: startY,
+          },
+          {
+            input: resizedImages[2],
+            left: startX,
+            top: startY + photoHeight + spacing,
+          },
+          {
+            input: resizedImages[3],
+            left: startX + photoWidth + spacing,
+            top: startY + photoHeight + spacing,
+          },
+        ];
       }
-
-      // Ensure dimensions are integers
-      photoWidth = Math.floor(photoWidth);
-      photoHeight = Math.floor(photoHeight);
-
-      // Resize all images to uniform landscape rectangles with proper aspect ratio
-      const resizedImages = await Promise.all(
-        imagePaths.map(async (imgPath) => {
-          return await sharp(imgPath)
-            .resize(photoWidth, photoHeight, {
-              fit: "cover",
-              position: "center",
-            })
-            .toBuffer();
-        })
-      );
-
-      // Calculate positions for 2x2 grid, centered on canvas
-      const gridWidth = photoWidth * 2 + spacing;
-      const gridHeight = photoHeight * 2 + spacing;
-      const startX = Math.floor((canvasWidth - gridWidth) / 2);
-      const startY = Math.floor((canvasHeight - gridHeight - logoSize) / 2);
-
-      // Create collage composition array
-      const composition = [
-        { input: resizedImages[0], left: startX, top: startY },
-        {
-          input: resizedImages[1],
-          left: startX + photoWidth + spacing,
-          top: startY,
-        },
-        {
-          input: resizedImages[2],
-          left: startX,
-          top: startY + photoHeight + spacing,
-        },
-        {
-          input: resizedImages[3],
-          left: startX + photoWidth + spacing,
-          top: startY + photoHeight + spacing,
-        },
-      ];
 
       // Add logo if provided
       if (logoPath && fs.existsSync(logoPath)) {
@@ -336,6 +392,19 @@ export class SharpManager {
         }`
       );
     }
+  }
+
+  async generatePrintPDF(
+    imagePaths: string[],
+    outputPath: string,
+    options: any = {}
+  ): Promise<CollageResult> {
+    // Use the existing buildCollage method but ensure PDF output
+    return await this.buildCollage(imagePaths, outputPath, {
+      ...options,
+      paperSize: "A6",
+      orientation: "portrait",
+    });
   }
 
   getAvailableFilters(): AvailableFilter[] {

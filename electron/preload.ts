@@ -37,6 +37,9 @@ contextBridge.exposeInMainWorld("electronAPI", {
   // File operations
   saveFile: (data: any, path: string) =>
     ipcRenderer.invoke("save-file", data, path),
+  readFile: (path: string) => ipcRenderer.invoke("read-file", path),
+  createTempFile: (data: any, extension: string) =>
+    ipcRenderer.invoke("create-temp-file", data, extension),
 
   // Image processing with Sharp
   applyImageFilter: (
@@ -64,4 +67,6 @@ contextBridge.exposeInMainWorld("electronAPI", {
   // Collage functionality
   buildCollage: (imagePaths: string[], outputPath: string, options?: any) =>
     ipcRenderer.invoke("build-collage", imagePaths, outputPath, options),
+  generatePrintPDF: (imagePaths: string[], outputPath: string, options?: any) =>
+    ipcRenderer.invoke("generate-print-pdf", imagePaths, outputPath, options),
 });

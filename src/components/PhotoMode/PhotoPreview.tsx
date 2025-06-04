@@ -1,14 +1,16 @@
-import { PhotoModePage } from "@/lib/enums";
+import { PaperType, PhotoModePage } from "@/lib/enums";
 import React from "react";
 
 interface PhotoPreviewProps {
   photos: File[];
   setCurrentPage: (page: PhotoModePage) => void;
+  paperType: PaperType;
 }
 
 const PhotoPreview: React.FC<PhotoPreviewProps> = ({
   photos,
   setCurrentPage,
+  paperType,
 }) => {
   return (
     <div>
