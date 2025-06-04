@@ -1,9 +1,11 @@
 import { spawn, ChildProcess } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
+import * as os from "os";
 import { Camera, CaptureOptions, FrameData } from "../types/camera.type";
 
 export enum CameraErrorType {
+  NO_WSL = "NO_WSL",
   NO_GPHOTO2 = "NO_GPHOTO2",
   NO_CAMERAS = "NO_CAMERAS",
   CAMERA_BUSY = "CAMERA_BUSY",
@@ -26,11 +28,172 @@ export class CameraError extends Error {
 export class CameraManager {
   private previewProcess: ChildProcess | null = null;
   private frameCallback: ((frame: FrameData) => void) | null = null;
+  private wslAvailable: boolean | null = null;
+
+  private async checkWSLAvailability(): Promise<boolean> {
+    if (this.wslAvailable !== null) {
+      return this.wslAvailable;
+    }
+
+    return new Promise((resolve) => {
+      // Check if we're on Windows first
+      if (os.platform() !== "win32") {
+        this.wslAvailable = false;
+        resolve(false);
+        return;
+      }
+
+      const wsl = spawn("wsl", ["--status"], { timeout: 5000 });
+
+      wsl.on("error", () => {
+        this.wslAvailable = false;
+        resolve(false);
+      });
+
+      wsl.on("close", (code) => {
+        this.wslAvailable = code === 0;
+        resolve(code === 0);
+      });
+
+      setTimeout(() => {
+        if (!wsl.killed) {
+          wsl.kill();
+          this.wslAvailable = false;
+          resolve(false);
+        }
+      }, 3000);
+    });
+  }
+
+  private async checkGphoto2InWSL(): Promise<boolean> {
+    if (!(await this.checkWSLAvailability())) {
+      return false;
+    }
+
+    return new Promise((resolve) => {
+      // Try multiple ways to check for gphoto2
+      const checkCommands = [
+        ["which", "gphoto2"],
+        ["command", "-v", "gphoto2"],
+        ["whereis", "gphoto2"],
+        [
+          "bash",
+          "-c",
+          "which gphoto2 || command -v gphoto2 || echo /usr/bin/gphoto2",
+        ],
+      ];
+
+      let attempts = 0;
+
+      const tryNextCommand = () => {
+        if (attempts >= checkCommands.length) {
+          // Last resort: try to run gphoto2 directly to see if it exists
+          const directTest = spawn("wsl", ["gphoto2", "--version"], {
+            timeout: 5000,
+          });
+
+          directTest.on("error", () => resolve(false));
+          directTest.on("close", (code) => {
+            // If gphoto2 --version succeeds, it's installed
+            resolve(code === 0);
+          });
+
+          setTimeout(() => {
+            if (!directTest.killed) {
+              directTest.kill();
+              resolve(false);
+            }
+          }, 3000);
+          return;
+        }
+
+        const cmd = checkCommands[attempts];
+        const wsl = spawn("wsl", cmd, { timeout: 5000 });
+
+        let output = "";
+
+        wsl.stdout?.on("data", (data) => {
+          output += data.toString();
+        });
+
+        wsl.on("error", () => {
+          attempts++;
+          tryNextCommand();
+        });
+
+        wsl.on("close", (code) => {
+          if (code === 0 && output.trim() && output.includes("gphoto2")) {
+            resolve(true);
+          } else {
+            attempts++;
+            tryNextCommand();
+          }
+        });
+
+        setTimeout(() => {
+          if (!wsl.killed) {
+            wsl.kill();
+            attempts++;
+            tryNextCommand();
+          }
+        }, 3000);
+      };
+
+      tryNextCommand();
+    });
+  }
+
+  private convertWindowsPathToWSL(windowsPath: string): string {
+    // Convert Windows path to WSL path
+    // C:\path\to\file -> /mnt/c/path/to/file
+    const normalized = path.normalize(windowsPath).replace(/\\/g, "/");
+    if (normalized.match(/^[A-Za-z]:/)) {
+      const drive = normalized.charAt(0).toLowerCase();
+      return `/mnt/${drive}${normalized.slice(2)}`;
+    }
+    return normalized;
+  }
+
+  private convertWSLPathToWindows(wslPath: string): string {
+    // Convert WSL path back to Windows path
+    // /mnt/c/path/to/file -> C:\path\to\file
+    if (wslPath.startsWith("/mnt/")) {
+      const parts = wslPath.split("/");
+      if (parts.length >= 3) {
+        const drive = parts[2].toUpperCase();
+        const pathPart = parts.slice(3).join("\\");
+        return `${drive}:\\${pathPart}`;
+      }
+    }
+    return wslPath;
+  }
 
   async getAvailableCameras(): Promise<Camera[]> {
-    return new Promise((resolve, reject) => {
-      // Check if gphoto2 is available
-      const gphoto = spawn("gphoto2", ["--auto-detect"]);
+    return new Promise(async (resolve, reject) => {
+      if (!(await this.checkWSLAvailability())) {
+        reject(
+          new CameraError(
+            "WSL not available. Please install WSL with Ubuntu to use DSLR cameras.",
+            CameraErrorType.NO_WSL,
+            true
+          )
+        );
+        return;
+      }
+
+      if (!(await this.checkGphoto2InWSL())) {
+        reject(
+          new CameraError(
+            "gphoto2 not found in WSL. Please ensure gphoto2 is installed and accessible: sudo apt update && sudo apt install gphoto2 libgphoto2-dev",
+            CameraErrorType.NO_GPHOTO2,
+            true
+          )
+        );
+        return;
+      }
+
+      // Simplified command without complex PATH manipulation
+      const gphoto = spawn("wsl", ["gphoto2", "--auto-detect"]);
       let output = "";
       let errorOutput = "";
 
@@ -43,10 +206,9 @@ export class CameraManager {
       });
 
       gphoto.on("error", (err) => {
-        // gphoto2 not installed or not in PATH
         reject(
           new CameraError(
-            "gphoto2 not found. Please install gphoto2 or use webcam fallback.",
+            `Failed to execute gphoto2 in WSL: ${err.message}`,
             CameraErrorType.NO_GPHOTO2,
             true
           )
@@ -54,16 +216,33 @@ export class CameraManager {
       });
 
       gphoto.on("close", (code) => {
+        console.log("gphoto2 --auto-detect output:", output);
+        console.log("gphoto2 --auto-detect stderr:", errorOutput);
+
         if (code !== 0) {
-          // Check for specific error patterns
           if (
             errorOutput.includes("no cameras found") ||
-            output.includes("no cameras found")
+            output.includes("no cameras found") ||
+            errorOutput.includes("No camera found")
           ) {
             reject(
               new CameraError(
-                "No DSLR/mirrorless cameras detected. Use webcam fallback.",
+                "No DSLR/mirrorless cameras detected. Make sure your camera is connected via USB and turned on.",
                 CameraErrorType.NO_CAMERAS,
+                true
+              )
+            );
+            return;
+          }
+
+          if (
+            errorOutput.includes("command not found") ||
+            errorOutput.includes("gphoto2: not found")
+          ) {
+            reject(
+              new CameraError(
+                "gphoto2 command not found. Please install: sudo apt update && sudo apt install gphoto2 libgphoto2-dev",
+                CameraErrorType.NO_GPHOTO2,
                 true
               )
             );
@@ -72,7 +251,9 @@ export class CameraManager {
 
           reject(
             new CameraError(
-              `Camera detection failed: ${errorOutput || "Unknown error"}`,
+              `Camera detection failed (code ${code}): ${
+                errorOutput || output || "Unknown error"
+              }`,
               CameraErrorType.UNKNOWN,
               true
             )
@@ -86,7 +267,7 @@ export class CameraManager {
         // Skip header lines and parse camera list
         for (let i = 2; i < lines.length; i++) {
           const line = lines[i].trim();
-          if (line && !line.startsWith("-")) {
+          if (line && !line.startsWith("-") && line.length > 0) {
             const parts = line.split(/\s+/);
             if (parts.length >= 2) {
               cameras.push({
@@ -100,10 +281,12 @@ export class CameraManager {
           }
         }
 
+        console.log("Detected cameras:", cameras);
+
         if (cameras.length === 0) {
           reject(
             new CameraError(
-              "No cameras detected. Use webcam fallback.",
+              "No cameras detected. Ensure your camera is connected via USB, turned on, and not being used by another application.",
               CameraErrorType.NO_CAMERAS,
               true
             )
@@ -125,7 +308,7 @@ export class CameraManager {
             )
           );
         }
-      }, 10000); // 10 second timeout
+      }, 15000); // Increased timeout to 15 seconds
     });
   }
 
@@ -133,121 +316,218 @@ export class CameraManager {
     outputPath: string,
     options: CaptureOptions = {}
   ): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const args = ["--capture-image-and-download"];
-
-      if (options.format) {
-        args.push("--set-config", `imageformat=${options.format}`);
+    return new Promise(async (resolve, reject) => {
+      if (!(await this.checkWSLAvailability())) {
+        reject(
+          new CameraError("WSL not available", CameraErrorType.NO_WSL, true)
+        );
+        return;
       }
 
-      const gphoto = spawn("gphoto2", args, {
-        cwd: path.dirname(outputPath),
-      });
+      // Create a temporary directory in WSL for capture
+      const tempDir = "/tmp/photobooth";
+      const tempFileName = `capture_${Date.now()}.jpg`;
+      const wslTempPath = `${tempDir}/${tempFileName}`;
 
-      let capturedFile = "";
-      let errorOutput = "";
+      // Step 1: Create directory
+      const mkdirProcess = spawn("wsl", ["mkdir", "-p", tempDir]);
 
-      gphoto.stdout.on("data", (data) => {
-        const output = data.toString();
-        const match = output.match(/Saving file as (.+)/);
-        if (match) {
-          capturedFile = match[1].trim();
-        }
-      });
-
-      gphoto.stderr.on("data", (data) => {
-        errorOutput += data.toString();
-      });
-
-      gphoto.on("error", (err) => {
-        reject(
-          new CameraError(
-            "gphoto2 process failed to start",
-            CameraErrorType.NO_GPHOTO2,
-            true
-          )
-        );
-      });
-
-      gphoto.on("close", (code) => {
-        if (code !== 0) {
-          // Parse specific error types
-          if (errorOutput.includes("busy") || errorOutput.includes("locked")) {
-            reject(
-              new CameraError(
-                "Camera is busy or locked by another application",
-                CameraErrorType.CAMERA_BUSY,
-                true
-              )
-            );
-          } else if (errorOutput.includes("no camera found")) {
-            reject(
-              new CameraError(
-                "Camera disconnected or not found",
-                CameraErrorType.NO_CAMERAS,
-                true
-              )
-            );
-          } else {
-            reject(
-              new CameraError(
-                `Image capture failed: ${errorOutput || "Unknown error"}`,
-                CameraErrorType.CAPTURE_FAILED,
-                true
-              )
-            );
-          }
+      mkdirProcess.on("close", (mkdirCode) => {
+        if (mkdirCode !== 0) {
+          reject(
+            new CameraError(
+              "Failed to create temp directory in WSL",
+              CameraErrorType.CAPTURE_FAILED,
+              true
+            )
+          );
           return;
         }
 
-        if (capturedFile) {
-          const sourcePath = path.join(path.dirname(outputPath), capturedFile);
-          if (fs.existsSync(sourcePath)) {
+        // Step 2: Capture image
+        const captureArgs = [
+          "gphoto2",
+          "--capture-image-and-download",
+          "--filename",
+          wslTempPath,
+        ];
+
+        if (options.format) {
+          captureArgs.splice(
+            1,
+            0,
+            "--set-config",
+            `imageformat=${options.format}`
+          );
+        }
+
+        const gphoto = spawn("wsl", captureArgs);
+
+        let output = "";
+        let errorOutput = "";
+
+        gphoto.stdout.on("data", (data) => {
+          const dataStr = data.toString();
+          output += dataStr;
+          console.log("gphoto2 capture stdout:", dataStr);
+        });
+
+        gphoto.stderr.on("data", (data) => {
+          const dataStr = data.toString();
+          errorOutput += dataStr;
+          console.error("gphoto2 capture stderr:", dataStr);
+        });
+
+        gphoto.on("error", (err) => {
+          reject(
+            new CameraError(
+              `WSL gphoto2 process failed to start: ${err.message}`,
+              CameraErrorType.NO_GPHOTO2,
+              true
+            )
+          );
+        });
+
+        gphoto.on("close", async (code) => {
+          console.log(`gphoto2 capture process closed with code: ${code}`);
+          console.log("Final output:", output);
+          console.log("Final error output:", errorOutput);
+
+          // Check if file was created
+          const checkFile = spawn("wsl", ["test", "-f", wslTempPath]);
+
+          checkFile.on("close", async (checkCode) => {
+            const fileExists = checkCode === 0;
+            console.log("File exists check:", fileExists);
+
+            if (!fileExists) {
+              if (
+                errorOutput.includes("busy") ||
+                errorOutput.includes("locked")
+              ) {
+                reject(
+                  new CameraError(
+                    "Camera is busy or locked by another application",
+                    CameraErrorType.CAMERA_BUSY,
+                    true
+                  )
+                );
+              } else if (
+                errorOutput.includes("no camera found") ||
+                errorOutput.includes("No camera found")
+              ) {
+                reject(
+                  new CameraError(
+                    "Camera disconnected or not found",
+                    CameraErrorType.NO_CAMERAS,
+                    true
+                  )
+                );
+              } else {
+                reject(
+                  new CameraError(
+                    `Image capture failed (code ${code}): ${
+                      errorOutput || output || "Unknown error"
+                    }`,
+                    CameraErrorType.CAPTURE_FAILED,
+                    true
+                  )
+                );
+              }
+              return;
+            }
+
             try {
-              fs.renameSync(sourcePath, outputPath);
-              resolve(outputPath);
-            } catch (fsError) {
+              // Copy file from WSL to Windows
+              const windowsOutputPath = path.resolve(outputPath);
+
+              // Ensure temp directory exists on Windows
+              const tempDirWin = path.join(os.tmpdir(), "photobooth-app");
+              if (!fs.existsSync(tempDirWin)) {
+                fs.mkdirSync(tempDirWin, { recursive: true });
+              }
+
+              const finalTempPath = path.join(
+                tempDirWin,
+                `captured_${Date.now()}.jpg`
+              );
+              const wslFinalPath = this.convertWindowsPathToWSL(finalTempPath);
+
+              console.log(
+                "Copying from WSL:",
+                wslTempPath,
+                "to Windows:",
+                wslFinalPath
+              );
+
+              const copyProcess = spawn("wsl", [
+                "cp",
+                wslTempPath,
+                wslFinalPath,
+              ]);
+
+              copyProcess.on("close", (copyCode) => {
+                console.log("Copy process closed with code:", copyCode);
+
+                if (copyCode === 0 && fs.existsSync(finalTempPath)) {
+                  // Move to final destination
+                  try {
+                    fs.copyFileSync(finalTempPath, windowsOutputPath);
+                    fs.unlinkSync(finalTempPath); // Clean up temp file
+
+                    // Clean up WSL temp file
+                    spawn("wsl", ["rm", "-f", wslTempPath]);
+
+                    console.log(
+                      "Successfully captured and saved image to:",
+                      windowsOutputPath
+                    );
+                    resolve(windowsOutputPath);
+                  } catch (fsError) {
+                    reject(
+                      new CameraError(
+                        `Failed to move captured file: ${fsError}`,
+                        CameraErrorType.CAPTURE_FAILED,
+                        false
+                      )
+                    );
+                  }
+                } else {
+                  reject(
+                    new CameraError(
+                      "Failed to copy captured file from WSL",
+                      CameraErrorType.CAPTURE_FAILED,
+                      true
+                    )
+                  );
+                }
+              });
+            } catch (error) {
               reject(
                 new CameraError(
-                  `Failed to move captured file: ${fsError}`,
+                  `File operation failed: ${error}`,
                   CameraErrorType.CAPTURE_FAILED,
-                  false
+                  true
                 )
               );
             }
-          } else {
+          });
+        });
+
+        // Set timeout for capture
+        setTimeout(() => {
+          if (!gphoto.killed) {
+            gphoto.kill();
             reject(
               new CameraError(
-                "Captured file not found on disk",
+                "Image capture timed out",
                 CameraErrorType.CAPTURE_FAILED,
                 true
               )
             );
           }
-        } else {
-          reject(
-            new CameraError(
-              "No file was captured",
-              CameraErrorType.CAPTURE_FAILED,
-              true
-            )
-          );
-        }
+        }, 20000); // 20 second timeout
       });
-
-      // Set timeout for capture
-      setTimeout(() => {
-        if (!gphoto.killed) {
-          gphoto.kill();
-          reject(
-            new CameraError(
-              "Image capture timed out",
-              CameraErrorType.CAPTURE_FAILED,
-              true
-            )
-          );
-        }
-      }, 15000); // 15 second timeout
     });
   }
 
@@ -255,83 +535,80 @@ export class CameraManager {
     this.stopPreview();
     this.frameCallback = onFrame;
 
-    try {
-      this.previewProcess = spawn("gphoto2", ["--capture-preview", "--stdout"]);
+    this.checkWSLAvailability().then((available) => {
+      if (!available) {
+        console.error("WSL not available for preview");
+        return;
+      }
 
-      let buffer = Buffer.alloc(0);
-      let lastFrameTime = Date.now();
+      try {
+        this.previewProcess = spawn("wsl", [
+          "gphoto2",
+          "--capture-preview",
+          "--stdout",
+        ]);
 
-      this.previewProcess.stdout?.on("data", (data) => {
-        buffer = Buffer.concat([buffer, data]);
+        let buffer = Buffer.alloc(0);
+        let lastFrameTime = Date.now();
 
-        // Look for JPEG markers
-        const startMarker = Buffer.from([0xff, 0xd8]);
-        const endMarker = Buffer.from([0xff, 0xd9]);
+        this.previewProcess.stdout?.on("data", (data) => {
+          buffer = Buffer.concat([buffer, data]);
 
-        let startIndex = buffer.indexOf(startMarker);
+          // Look for JPEG markers
+          const startMarker = Buffer.from([0xff, 0xd8]);
+          const endMarker = Buffer.from([0xff, 0xd9]);
 
-        while (startIndex !== -1) {
-          const endIndex = buffer.indexOf(endMarker, startIndex);
+          let startIndex = buffer.indexOf(startMarker);
 
-          if (endIndex !== -1) {
-            const frameBuffer = buffer.slice(startIndex, endIndex + 2);
+          while (startIndex !== -1) {
+            const endIndex = buffer.indexOf(endMarker, startIndex);
 
-            if (this.frameCallback && frameBuffer.length > 100) {
-              // Ensure it's a valid frame
-              this.frameCallback({
-                data: frameBuffer,
-                timestamp: Date.now(),
-              });
-              lastFrameTime = Date.now();
+            if (endIndex !== -1) {
+              const frameBuffer = buffer.slice(startIndex, endIndex + 2);
+
+              if (this.frameCallback && frameBuffer.length > 100) {
+                // Ensure it's a valid frame
+                this.frameCallback({
+                  data: frameBuffer,
+                  timestamp: Date.now(),
+                });
+                lastFrameTime = Date.now();
+              }
+
+              buffer = buffer.slice(endIndex + 2);
+              startIndex = buffer.indexOf(startMarker);
+            } else {
+              break;
             }
-
-            buffer = buffer.slice(endIndex + 2);
-            startIndex = buffer.indexOf(startMarker);
-          } else {
-            break;
           }
-        }
-      });
+        });
 
-      this.previewProcess.stderr?.on("data", (data) => {
-        const error = data.toString();
-        console.error("Preview stderr:", error);
+        this.previewProcess.stderr?.on("data", (data) => {
+          const error = data.toString();
+          console.error("Preview stderr:", error);
 
-        if (error.includes("no camera found") || error.includes("busy")) {
-          this.stopPreview();
-          // Could emit an error event here if needed
-        }
-      });
-
-      this.previewProcess.on("error", (err) => {
-        console.error("Preview process error:", err);
-        this.stopPreview();
-      });
-
-      this.previewProcess.on("close", (code) => {
-        if (code !== 0) {
-          console.error("Preview process closed with code:", code);
-        }
-        this.stopPreview();
-      });
-
-      // Monitor for frame timeout
-      const frameTimeout = setInterval(() => {
-        if (Date.now() - lastFrameTime > 5000) {
-          // No frames for 5 seconds
-          console.warn("Preview frames stopped, restarting...");
-          clearInterval(frameTimeout);
-          if (this.frameCallback) {
-            const callback = this.frameCallback;
+          if (error.includes("no camera found") || error.includes("busy")) {
             this.stopPreview();
-            setTimeout(() => this.startPreview(callback), 1000);
+            // Could emit an error event here if needed
           }
-        }
-      }, 2000);
-    } catch (error) {
-      console.error("Failed to start preview:", error);
-      this.stopPreview();
-    }
+        });
+
+        this.previewProcess.on("error", (err) => {
+          console.error("Preview process error:", err);
+          this.stopPreview();
+        });
+
+        this.previewProcess.on("close", (code) => {
+          if (code !== 0) {
+            console.error("Preview process closed with code:", code);
+          }
+          this.stopPreview();
+        });
+      } catch (error) {
+        console.error("Failed to start preview:", error);
+        this.stopPreview();
+      }
+    });
   }
 
   stopPreview(): void {
@@ -347,15 +624,17 @@ export class CameraManager {
     this.frameCallback = null;
   }
 
-  // Health check method
   async isGphoto2Available(): Promise<boolean> {
     try {
+      const wslAvailable = await this.checkWSLAvailability();
+      if (!wslAvailable) return false;
+
+      const gphotoAvailable = await this.checkGphoto2InWSL();
+      if (!gphotoAvailable) return false;
+
       const cameras = await this.getAvailableCameras();
       return cameras.length > 0;
     } catch (error) {
-      if (error instanceof CameraError && error.shouldFallbackToWebcam) {
-        return false;
-      }
       return false;
     }
   }

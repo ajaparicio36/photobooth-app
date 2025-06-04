@@ -41,6 +41,7 @@ export interface ElectronAPI {
     data: any,
     extension: string
   ) => Promise<{ success: boolean; path: string }>;
+  cleanupTempFiles: () => Promise<{ success: boolean }>;
 
   // Image processing with Sharp
   applyImageFilter: (

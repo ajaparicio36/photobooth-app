@@ -29,9 +29,15 @@ interface SortablePhotoProps {
   id: string;
   photo: File;
   index: number;
+  originalIndex: number; // Add original index
 }
 
-const SortablePhoto: React.FC<SortablePhotoProps> = ({ id, photo, index }) => {
+const SortablePhoto: React.FC<SortablePhotoProps> = ({
+  id,
+  photo,
+  index,
+  originalIndex,
+}) => {
   const {
     attributes,
     listeners,
@@ -64,11 +70,11 @@ const SortablePhoto: React.FC<SortablePhotoProps> = ({ id, photo, index }) => {
       className="relative bg-white border-2 border-dashed border-gray-300 rounded-lg p-2 cursor-move hover:border-blue-400 transition-colors"
     >
       <div className="text-xs font-bold mb-1 text-center">
-        Photo {index + 1}
+        Photo {originalIndex + 1}
       </div>
       <img
         src={previewUrl}
-        alt={`Photo ${index + 1}`}
+        alt={`Photo ${originalIndex + 1}`}
         className="w-full h-32 object-cover rounded"
       />
     </div>
@@ -82,6 +88,7 @@ const OrganizeCollage: React.FC<OrganizeCollageProps> = ({
   paperType,
 }) => {
   const [organizedPhotos, setOrganizedPhotos] = useState(photos);
+  const [originalIndices, setOriginalIndices] = useState<number[]>([]);
   const [isBuilding, setIsBuilding] = useState(false);
 
   const sensors = useSensors(
@@ -96,6 +103,7 @@ const OrganizeCollage: React.FC<OrganizeCollageProps> = ({
 
   useEffect(() => {
     setOrganizedPhotos(photos);
+    setOriginalIndices(photos.map((_, index) => index));
   }, [photos]);
 
   const handleDragEnd = (event: DragEndEvent) => {
@@ -111,6 +119,17 @@ const OrganizeCollage: React.FC<OrganizeCollageProps> = ({
         );
 
         return arrayMove(items, oldIndex, newIndex);
+      });
+
+      setOriginalIndices((indices) => {
+        const oldIndex = organizedPhotos.findIndex(
+          (_, index) => `photo-${index}` === active.id
+        );
+        const newIndex = organizedPhotos.findIndex(
+          (_, index) => `photo-${index}` === over?.id
+        );
+
+        return arrayMove(indices, oldIndex, newIndex);
       });
     }
   };
@@ -203,6 +222,7 @@ const OrganizeCollage: React.FC<OrganizeCollageProps> = ({
                   id={`photo-${index}`}
                   photo={photo}
                   index={index}
+                  originalIndex={originalIndices[index]}
                 />
               ))}
             </div>

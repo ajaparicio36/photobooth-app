@@ -4,15 +4,23 @@ import { useNavigate } from "react-router-dom";
 const PrintQueue = ({ printFile }) => {
     const [isPrinting, setIsPrinting] = useState(false);
     const [printStatus, setPrintStatus] = useState("");
-    const [showQR, setShowQR] = useState(false);
     const [availablePrinters, setAvailablePrinters] = useState([]);
     const [selectedPrinter, setSelectedPrinter] = useState("");
+    const [collagePreview, setCollagePreview] = useState("");
+    const [showSoftCopiesDialog, setShowSoftCopiesDialog] = useState(false);
+    const [isSavingSoftCopies, setIsSavingSoftCopies] = useState(false);
+    const [softCopiesResult, setSoftCopiesResult] = useState("");
     const navigate = useNavigate();
-    // Sample QR code (placeholder)
-    const sampleQRCode = "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSJ3aGl0ZSIvPgogIDx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LWZhbWlseT0ibW9ub3NwYWNlIiBmb250LXNpemU9IjE0cHgiPgogICAgUVIgQ29kZQogIDwvdGV4dD4KPC9zdmc+";
     useEffect(() => {
         loadPrinters();
+        generateCollagePreview();
     }, []);
+    const generateCollagePreview = () => {
+        if (printFile) {
+            const url = URL.createObjectURL(printFile);
+            setCollagePreview(url);
+        }
+    };
     const loadPrinters = async () => {
         try {
             const printers = await window.electronAPI.getAvailablePrinters();
@@ -52,7 +60,6 @@ const PrintQueue = ({ printFile }) => {
             };
             await window.electronAPI.printImage(tempPath, selectedPrinter, printOptions);
             setPrintStatus("Print job sent successfully!");
-            setShowQR(true);
         }
         catch (error) {
             console.error("Failed to print:", error);
@@ -62,16 +69,54 @@ const PrintQueue = ({ printFile }) => {
             setIsPrinting(false);
         }
     };
-    const handleDone = () => {
+    const handleGetSoftCopies = async () => {
+        setIsSavingSoftCopies(true);
+        setSoftCopiesResult("");
+        try {
+            // Get photos from the photos state (we'll need to pass this from parent)
+            // For now, we'll use the print file
+            const formData = new FormData();
+            formData.append("collage", printFile);
+            const apiUrl = process.env.REACT_APP_API_URL || "http://localhost:3001";
+            const response = await fetch(`${apiUrl}/save`, {
+                method: "POST",
+                body: formData,
+            });
+            if (response.ok) {
+                const result = await response.json();
+                setSoftCopiesResult(`Soft copies saved! Access code: ${result.code || "SUCCESS"}`);
+            }
+            else {
+                setSoftCopiesResult("Failed to save soft copies. Please try again.");
+            }
+        }
+        catch (error) {
+            console.error("Failed to save soft copies:", error);
+            setSoftCopiesResult("Failed to save soft copies. Please try again.");
+        }
+        finally {
+            setIsSavingSoftCopies(false);
+        }
+    };
+    const handleDone = async () => {
+        // Clean up tmp folder
+        try {
+            await window.electronAPI.cleanupTempFiles();
+        }
+        catch (error) {
+            console.error("Failed to cleanup temp files:", error);
+        }
         navigate("/done?message=Photo session completed successfully!");
     };
     if (!printFile) {
         return (_jsxs("div", { className: "flex flex-col items-center justify-center h-screen bg-gray-100", children: [_jsx("h2", { className: "text-3xl font-bold mb-4", children: "Print Queue" }), _jsx("p", { className: "text-gray-600", children: "No print file available" }), _jsx("button", { onClick: () => navigate("/"), className: "mt-4 bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded", children: "Go Home" })] }));
     }
-    return (_jsxs("div", { className: "flex flex-col items-center justify-center min-h-screen bg-gray-100 p-4", children: [_jsx("h2", { className: "text-3xl font-bold mb-6", children: "Print Queue" }), _jsxs("div", { className: "bg-white p-6 rounded-lg shadow-lg mb-6 max-w-md w-full", children: [_jsx("h3", { className: "text-xl font-bold mb-4", children: "Print Details" }), _jsxs("div", { className: "mb-4", children: [_jsxs("p", { children: [_jsx("strong", { children: "File:" }), " ", printFile.name] }), _jsxs("p", { children: [_jsx("strong", { children: "Size:" }), " ", Math.round(printFile.size / 1024), " KB"] }), _jsxs("p", { children: [_jsx("strong", { children: "Type:" }), " ", printFile.type] })] }), availablePrinters.length > 0 && (_jsxs("div", { className: "mb-4", children: [_jsx("label", { className: "block text-sm font-bold mb-2", children: "Select Printer:" }), _jsx("select", { value: selectedPrinter, onChange: (e) => setSelectedPrinter(e.target.value), className: "w-full p-2 border border-gray-300 rounded", children: availablePrinters.map((printer) => (_jsxs("option", { value: printer.name, children: [printer.displayName, " ", printer.isDefault ? "(Default)" : ""] }, printer.name))) })] })), printStatus && (_jsx("div", { className: `mb-4 p-3 rounded ${printStatus.includes("failed") || printStatus.includes("No")
+    return (_jsxs("div", { className: "flex flex-col items-center justify-center min-h-screen bg-gray-100 p-4", children: [_jsx("h2", { className: "text-3xl font-bold mb-6", children: "Print Preview" }), _jsxs("div", { className: "bg-white p-4 rounded-lg shadow-lg mb-6", children: [_jsx("h3", { className: "text-xl font-bold mb-4 text-center", children: "Your Collage" }), collagePreview && (_jsx("img", { src: collagePreview, alt: "Collage Preview", className: "max-w-md max-h-96 object-contain border rounded" }))] }), _jsxs("div", { className: "bg-white p-6 rounded-lg shadow-lg mb-6 max-w-md w-full", children: [_jsx("h3", { className: "text-xl font-bold mb-4", children: "Print Details" }), _jsxs("div", { className: "mb-4", children: [_jsxs("p", { children: [_jsx("strong", { children: "File:" }), " ", printFile.name] }), _jsxs("p", { children: [_jsx("strong", { children: "Size:" }), " ", Math.round(printFile.size / 1024), " KB"] }), _jsxs("p", { children: [_jsx("strong", { children: "Type:" }), " ", printFile.type] })] }), availablePrinters.length > 0 && (_jsxs("div", { className: "mb-4", children: [_jsx("label", { className: "block text-sm font-bold mb-2", children: "Select Printer:" }), _jsx("select", { value: selectedPrinter, onChange: (e) => setSelectedPrinter(e.target.value), className: "w-full p-2 border border-gray-300 rounded", children: availablePrinters.map((printer) => (_jsxs("option", { value: printer.name, children: [printer.displayName, " ", printer.isDefault ? "(Default)" : ""] }, printer.name))) })] })), printStatus && (_jsx("div", { className: `mb-4 p-3 rounded ${printStatus.includes("failed") || printStatus.includes("No")
                             ? "bg-red-100 text-red-700"
                             : printStatus.includes("success")
                                 ? "bg-green-100 text-green-700"
-                                : "bg-blue-100 text-blue-700"}`, children: printStatus })), _jsx("div", { className: "flex gap-4", children: _jsx("button", { onClick: handlePrint, disabled: isPrinting || !selectedPrinter, className: "flex-1 bg-green-500 hover:bg-green-700 disabled:bg-gray-400 text-white font-bold py-3 px-4 rounded", children: isPrinting ? "Printing..." : "Print Now" }) })] }), showQR && (_jsxs("div", { className: "bg-white p-6 rounded-lg shadow-lg mb-6 max-w-md w-full text-center", children: [_jsx("h3", { className: "text-xl font-bold mb-4", children: "Get Digital Copies" }), _jsx("p", { className: "text-gray-600 mb-4", children: "Scan QR code for soft copies:" }), _jsx("div", { className: "flex justify-center mb-4", children: _jsx("img", { src: sampleQRCode, alt: "QR Code for digital copies", className: "w-48 h-48 border" }) }), _jsx("p", { className: "text-sm text-gray-500", children: "QR code expires in 24 hours" })] })), _jsx("button", { onClick: handleDone, className: "bg-blue-500 hover:bg-blue-700 text-white font-bold py-4 px-8 rounded-lg", children: "Done" })] }));
+                                : "bg-blue-100 text-blue-700"}`, children: printStatus })), _jsxs("div", { className: "flex gap-4", children: [_jsx("button", { onClick: handlePrint, disabled: isPrinting || !selectedPrinter, className: "flex-1 bg-green-500 hover:bg-green-700 disabled:bg-gray-400 text-white font-bold py-3 px-4 rounded", children: isPrinting ? "Printing..." : "Print Now" }), _jsx("button", { onClick: () => setShowSoftCopiesDialog(true), className: "flex-1 bg-blue-500 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded", children: "Get Soft Copies" })] })] }), showSoftCopiesDialog && (_jsx("div", { className: "fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50", children: _jsxs("div", { className: "bg-white p-6 rounded-lg shadow-lg max-w-md w-full mx-4", children: [_jsx("h3", { className: "text-xl font-bold mb-4", children: "Get Soft Copies" }), _jsx("p", { className: "mb-4 text-gray-600", children: "Save your photos to get digital copies delivered to your email or phone." }), softCopiesResult && (_jsx("div", { className: `mb-4 p-3 rounded ${softCopiesResult.includes("Failed")
+                                ? "bg-red-100 text-red-700"
+                                : "bg-green-100 text-green-700"}`, children: softCopiesResult })), _jsxs("div", { className: "flex gap-4", children: [_jsx("button", { onClick: () => setShowSoftCopiesDialog(false), className: "flex-1 bg-gray-500 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded", children: "Cancel" }), _jsx("button", { onClick: handleGetSoftCopies, disabled: isSavingSoftCopies, className: "flex-1 bg-blue-500 hover:bg-blue-700 disabled:bg-gray-400 text-white font-bold py-2 px-4 rounded", children: isSavingSoftCopies ? "Saving..." : "Save Copies" })] })] }) })), _jsx("button", { onClick: handleDone, className: "bg-blue-500 hover:bg-blue-700 text-white font-bold py-4 px-8 rounded-lg", children: "Done" })] }));
 };
 export default PrintQueue;

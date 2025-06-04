@@ -40,6 +40,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   readFile: (path: string) => ipcRenderer.invoke("read-file", path),
   createTempFile: (data: any, extension: string) =>
     ipcRenderer.invoke("create-temp-file", data, extension),
+  cleanupTempFiles: () => ipcRenderer.invoke("cleanup-temp-files"),
 
   // Image processing with Sharp
   applyImageFilter: (

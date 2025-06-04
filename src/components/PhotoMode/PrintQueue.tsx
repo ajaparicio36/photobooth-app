@@ -8,17 +8,25 @@ interface PrintQueueProps {
 const PrintQueue: React.FC<PrintQueueProps> = ({ printFile }) => {
   const [isPrinting, setIsPrinting] = useState(false);
   const [printStatus, setPrintStatus] = useState<string>("");
-  const [showQR, setShowQR] = useState(false);
   const [availablePrinters, setAvailablePrinters] = useState<any[]>([]);
   const [selectedPrinter, setSelectedPrinter] = useState<string>("");
+  const [collagePreview, setCollagePreview] = useState<string>("");
+  const [showSoftCopiesDialog, setShowSoftCopiesDialog] = useState(false);
+  const [isSavingSoftCopies, setIsSavingSoftCopies] = useState(false);
+  const [softCopiesResult, setSoftCopiesResult] = useState<string>("");
   const navigate = useNavigate();
 
-  // Sample QR code (placeholder)
-  const sampleQRCode =
-    "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSJ3aGl0ZSIvPgogIDx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LWZhbWlseT0ibW9ub3NwYWNlIiBmb250LXNpemU9IjE0cHgiPgogICAgUVIgQ29kZQogIDwvdGV4dD4KPC9zdmc+";
   useEffect(() => {
     loadPrinters();
+    generateCollagePreview();
   }, []);
+
+  const generateCollagePreview = () => {
+    if (printFile) {
+      const url = URL.createObjectURL(printFile);
+      setCollagePreview(url);
+    }
+  };
 
   const loadPrinters = async () => {
     try {
@@ -69,7 +77,6 @@ const PrintQueue: React.FC<PrintQueueProps> = ({ printFile }) => {
       );
 
       setPrintStatus("Print job sent successfully!");
-      setShowQR(true);
     } catch (error) {
       console.error("Failed to print:", error);
       setPrintStatus("Print failed. Please try again.");
@@ -78,7 +85,46 @@ const PrintQueue: React.FC<PrintQueueProps> = ({ printFile }) => {
     }
   };
 
-  const handleDone = () => {
+  const handleGetSoftCopies = async () => {
+    setIsSavingSoftCopies(true);
+    setSoftCopiesResult("");
+
+    try {
+      // Get photos from the photos state (we'll need to pass this from parent)
+      // For now, we'll use the print file
+      const formData = new FormData();
+      formData.append("collage", printFile!);
+
+      const apiUrl = process.env.REACT_APP_API_URL || "http://localhost:3001";
+      const response = await fetch(`${apiUrl}/save`, {
+        method: "POST",
+        body: formData,
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        setSoftCopiesResult(
+          `Soft copies saved! Access code: ${result.code || "SUCCESS"}`
+        );
+      } else {
+        setSoftCopiesResult("Failed to save soft copies. Please try again.");
+      }
+    } catch (error) {
+      console.error("Failed to save soft copies:", error);
+      setSoftCopiesResult("Failed to save soft copies. Please try again.");
+    } finally {
+      setIsSavingSoftCopies(false);
+    }
+  };
+
+  const handleDone = async () => {
+    // Clean up tmp folder
+    try {
+      await window.electronAPI.cleanupTempFiles();
+    } catch (error) {
+      console.error("Failed to cleanup temp files:", error);
+    }
+
     navigate("/done?message=Photo session completed successfully!");
   };
 
@@ -99,7 +145,19 @@ const PrintQueue: React.FC<PrintQueueProps> = ({ printFile }) => {
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100 p-4">
-      <h2 className="text-3xl font-bold mb-6">Print Queue</h2>
+      <h2 className="text-3xl font-bold mb-6">Print Preview</h2>
+
+      {/* Collage Preview */}
+      <div className="bg-white p-4 rounded-lg shadow-lg mb-6">
+        <h3 className="text-xl font-bold mb-4 text-center">Your Collage</h3>
+        {collagePreview && (
+          <img
+            src={collagePreview}
+            alt="Collage Preview"
+            className="max-w-md max-h-96 object-contain border rounded"
+          />
+        )}
+      </div>
 
       <div className="bg-white p-6 rounded-lg shadow-lg mb-6 max-w-md w-full">
         <h3 className="text-xl font-bold mb-4">Print Details</h3>
@@ -156,21 +214,53 @@ const PrintQueue: React.FC<PrintQueueProps> = ({ printFile }) => {
           >
             {isPrinting ? "Printing..." : "Print Now"}
           </button>
+          <button
+            onClick={() => setShowSoftCopiesDialog(true)}
+            className="flex-1 bg-blue-500 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded"
+          >
+            Get Soft Copies
+          </button>
         </div>
       </div>
 
-      {showQR && (
-        <div className="bg-white p-6 rounded-lg shadow-lg mb-6 max-w-md w-full text-center">
-          <h3 className="text-xl font-bold mb-4">Get Digital Copies</h3>
-          <p className="text-gray-600 mb-4">Scan QR code for soft copies:</p>
-          <div className="flex justify-center mb-4">
-            <img
-              src={sampleQRCode}
-              alt="QR Code for digital copies"
-              className="w-48 h-48 border"
-            />
+      {/* Soft Copies Dialog */}
+      {showSoftCopiesDialog && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg shadow-lg max-w-md w-full mx-4">
+            <h3 className="text-xl font-bold mb-4">Get Soft Copies</h3>
+            <p className="mb-4 text-gray-600">
+              Save your photos to get digital copies delivered to your email or
+              phone.
+            </p>
+
+            {softCopiesResult && (
+              <div
+                className={`mb-4 p-3 rounded ${
+                  softCopiesResult.includes("Failed")
+                    ? "bg-red-100 text-red-700"
+                    : "bg-green-100 text-green-700"
+                }`}
+              >
+                {softCopiesResult}
+              </div>
+            )}
+
+            <div className="flex gap-4">
+              <button
+                onClick={() => setShowSoftCopiesDialog(false)}
+                className="flex-1 bg-gray-500 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleGetSoftCopies}
+                disabled={isSavingSoftCopies}
+                className="flex-1 bg-blue-500 hover:bg-blue-700 disabled:bg-gray-400 text-white font-bold py-2 px-4 rounded"
+              >
+                {isSavingSoftCopies ? "Saving..." : "Save Copies"}
+              </button>
+            </div>
           </div>
-          <p className="text-sm text-gray-500">QR code expires in 24 hours</p>
         </div>
       )}
 

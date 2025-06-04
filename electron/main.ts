@@ -69,16 +69,21 @@ const createWindow = (): void => {
 // IPC Handlers for Camera
 ipcMain.handle("get-available-cameras", async () => {
   try {
-    return await cameraManager.getAvailableCameras();
+    console.log("Attempting to get available cameras...");
+    const cameras = await cameraManager.getAvailableCameras();
+    console.log("Successfully found cameras:", cameras);
+    return cameras;
   } catch (error) {
     console.error("Failed to get cameras:", error);
     // Return structured error for frontend
     if (error instanceof Error) {
-      throw {
+      const structuredError = {
         message: error.message,
         type: (error as any).type || "UNKNOWN",
         shouldFallbackToWebcam: (error as any).shouldFallbackToWebcam || false,
       };
+      console.log("Returning structured error:", structuredError);
+      throw structuredError;
     }
     throw error;
   }
@@ -86,15 +91,20 @@ ipcMain.handle("get-available-cameras", async () => {
 
 ipcMain.handle("capture-image", async (_, outputPath: string, options: any) => {
   try {
-    return await cameraManager.captureImage(outputPath, options);
+    console.log("Attempting to capture image to:", outputPath);
+    const result = await cameraManager.captureImage(outputPath, options);
+    console.log("Successfully captured image:", result);
+    return result;
   } catch (error) {
     console.error("Failed to capture image:", error);
     if (error instanceof Error) {
-      throw {
+      const structuredError = {
         message: error.message,
         type: (error as any).type || "UNKNOWN",
         shouldFallbackToWebcam: (error as any).shouldFallbackToWebcam || false,
       };
+      console.log("Returning capture error:", structuredError);
+      throw structuredError;
     }
     throw error;
   }
@@ -268,6 +278,12 @@ ipcMain.handle(
 // File operation handlers
 ipcMain.handle("save-file", async (_, data: any, filePath: string) => {
   try {
+    // Ensure directory exists
+    const dir = path.dirname(filePath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+
     await fs.promises.writeFile(filePath, Buffer.from(data));
     return { success: true, path: filePath };
   } catch (error) {
@@ -288,11 +304,38 @@ ipcMain.handle("read-file", async (_, filePath: string) => {
 
 ipcMain.handle("create-temp-file", async (_, data: any, extension: string) => {
   try {
-    const tempPath = path.join(os.tmpdir(), `temp_${Date.now()}.${extension}`);
+    const tempDir = path.join(os.tmpdir(), "photobooth-app");
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true });
+    }
+
+    const tempPath = path.join(tempDir, `temp_${Date.now()}.${extension}`);
     await fs.promises.writeFile(tempPath, Buffer.from(data));
     return { success: true, path: tempPath };
   } catch (error) {
     console.error("Failed to create temp file:", error);
+    throw error;
+  }
+});
+
+// Add cleanup temp files handler
+ipcMain.handle("cleanup-temp-files", async () => {
+  try {
+    const tempDir = path.join(os.tmpdir(), "photobooth-app");
+    if (fs.existsSync(tempDir)) {
+      const files = fs.readdirSync(tempDir);
+      for (const file of files) {
+        const filePath = path.join(tempDir, file);
+        try {
+          fs.unlinkSync(filePath);
+        } catch (error) {
+          console.warn(`Failed to delete temp file ${filePath}:`, error);
+        }
+      }
+    }
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to cleanup temp files:", error);
     throw error;
   }
 });

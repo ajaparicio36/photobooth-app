@@ -16,11 +16,16 @@ const SelectFilterPage: React.FC<SelectFilterPageProps> = ({
   const [selectedFilter, setSelectedFilter] = useState<string>("");
   const [isApplying, setIsApplying] = useState(false);
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
+  const [previewUrl, setPreviewUrl] = useState<string>("");
 
   useEffect(() => {
     loadFilters();
     createPreviewUrls();
   }, [photos]);
+
+  useEffect(() => {
+    generatePreview();
+  }, [selectedFilter, previewUrls]);
 
   const loadFilters = async () => {
     try {
@@ -34,6 +39,63 @@ const SelectFilterPage: React.FC<SelectFilterPageProps> = ({
   const createPreviewUrls = () => {
     const urls = photos.map((photo) => URL.createObjectURL(photo));
     setPreviewUrls(urls);
+  };
+
+  const generatePreview = async () => {
+    if (previewUrls.length === 0) return;
+
+    try {
+      if (!selectedFilter) {
+        // No filter - create collage preview with original photos
+        const imagePaths: string[] = [];
+        for (let i = 0; i < photos.length; i++) {
+          const tempPath = `/tmp/preview_original_${i}_${Date.now()}.jpg`;
+          const arrayBuffer = await photos[i].arrayBuffer();
+          await window.electronAPI.saveFile(arrayBuffer, tempPath);
+          imagePaths.push(tempPath);
+        }
+
+        const outputPath = `/tmp/preview_collage_${Date.now()}.jpg`;
+        const result = await window.electronAPI.buildCollage(
+          imagePaths,
+          outputPath,
+          {
+            paperType: "4x6",
+            spacing: 10,
+            backgroundColor: "#ffffff",
+          }
+        );
+
+        const fileData = await window.electronAPI.readFile(result.jpegPath);
+        const blob = new Blob([fileData], { type: "image/jpeg" });
+        const url = URL.createObjectURL(blob);
+        setPreviewUrl(url);
+      } else {
+        // Apply filter to first photo for preview
+        const tempPath = `/tmp/preview_original_${Date.now()}.jpg`;
+        const outputPath = `/tmp/preview_filtered_${Date.now()}.jpg`;
+
+        const arrayBuffer = await photos[0].arrayBuffer();
+        await window.electronAPI.saveFile(arrayBuffer, tempPath);
+
+        const filterResult = await window.electronAPI.applyImageFilter(
+          tempPath,
+          selectedFilter,
+          outputPath
+        );
+
+        if (filterResult.success && filterResult.outputPath) {
+          const fileData = await window.electronAPI.readFile(
+            filterResult.outputPath
+          );
+          const blob = new Blob([fileData], { type: "image/jpeg" });
+          const url = URL.createObjectURL(blob);
+          setPreviewUrl(url);
+        }
+      }
+    } catch (error) {
+      console.error("Failed to generate preview:", error);
+    }
   };
 
   const applyFilterToPhotos = async () => {
@@ -90,42 +152,66 @@ const SelectFilterPage: React.FC<SelectFilterPageProps> = ({
   };
 
   return (
-    <div className="flex flex-col items-center justify-center h-screen bg-gray-100 p-4">
+    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100 p-4">
       <h2 className="text-3xl font-bold mb-6">Select Filter</h2>
 
-      <div className="flex gap-4 mb-6">
-        {previewUrls.map((url, index) => (
+      {/* Preview Section */}
+      <div className="bg-white p-4 rounded-lg shadow-lg mb-6">
+        <h3 className="text-lg font-bold mb-2 text-center">Preview</h3>
+        {previewUrl ? (
           <img
-            key={index}
-            src={url}
-            alt={`Photo ${index + 1}`}
-            className="w-32 h-24 object-cover rounded border"
+            src={previewUrl}
+            alt="Filter Preview"
+            className="w-64 h-48 object-cover rounded border"
           />
-        ))}
+        ) : (
+          <div className="w-64 h-48 bg-gray-200 rounded border flex items-center justify-center">
+            <span className="text-gray-500">Generating preview...</span>
+          </div>
+        )}
       </div>
 
-      <div className="grid grid-cols-3 gap-4 mb-6 max-w-2xl">
-        <button
-          onClick={() => setSelectedFilter("")}
-          className={`p-4 rounded border ${
-            !selectedFilter ? "bg-blue-500 text-white" : "bg-white"
-          }`}
-        >
-          No Filter
-        </button>
-        {availableFilters.map((filter) => (
+      {/* Filter Selection - Horizontal Scroll */}
+      <div className="w-full max-w-4xl mb-6">
+        <h3 className="text-lg font-bold mb-4 text-center">Choose Filter</h3>
+        <div className="flex gap-4 overflow-x-auto pb-4 px-4">
           <button
-            key={filter.key}
-            onClick={() => setSelectedFilter(filter.key)}
-            className={`p-4 rounded border ${
-              selectedFilter === filter.key
-                ? "bg-blue-500 text-white"
-                : "bg-white"
+            onClick={() => setSelectedFilter("")}
+            className={`flex-shrink-0 p-4 rounded border min-w-[120px] ${
+              !selectedFilter ? "bg-blue-500 text-white" : "bg-white"
             }`}
           >
-            <div className="text-sm font-bold">{filter.name}</div>
-            <div className="text-xs">{filter.description}</div>
+            <div className="text-sm font-bold">No Filter</div>
+            <div className="text-xs">Original</div>
           </button>
+          {availableFilters.map((filter) => (
+            <button
+              key={filter.key}
+              onClick={() => setSelectedFilter(filter.key)}
+              className={`flex-shrink-0 p-4 rounded border min-w-[120px] ${
+                selectedFilter === filter.key
+                  ? "bg-blue-500 text-white"
+                  : "bg-white"
+              }`}
+            >
+              <div className="text-sm font-bold">{filter.name}</div>
+              <div className="text-xs">{filter.description}</div>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Photos Grid - 2x2 */}
+      <div className="grid grid-cols-2 gap-4 mb-6">
+        {previewUrls.map((url, index) => (
+          <div key={index} className="text-center">
+            <img
+              src={url}
+              alt={`Photo ${index + 1}`}
+              className="w-48 h-36 object-cover rounded border"
+            />
+            <div className="text-sm font-bold mt-2">Photo {index + 1}</div>
+          </div>
         ))}
       </div>
 
