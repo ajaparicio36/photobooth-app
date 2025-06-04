@@ -37,4 +37,31 @@ contextBridge.exposeInMainWorld("electronAPI", {
   // File operations
   saveFile: (data: any, path: string) =>
     ipcRenderer.invoke("save-file", data, path),
+
+  // Image processing with Sharp
+  applyImageFilter: (
+    imagePath: string,
+    filterName: string,
+    outputPath: string
+  ) =>
+    ipcRenderer.invoke("apply-image-filter", imagePath, filterName, outputPath),
+  applyCustomImageFilter: (
+    imagePath: string,
+    options: any,
+    outputPath: string
+  ) =>
+    ipcRenderer.invoke(
+      "apply-custom-image-filter",
+      imagePath,
+      options,
+      outputPath
+    ),
+  getAvailableImageFilters: () =>
+    ipcRenderer.invoke("get-available-image-filters"),
+  getImageFilterInfo: (filterName: string) =>
+    ipcRenderer.invoke("get-image-filter-info", filterName),
+
+  // Collage functionality
+  buildCollage: (imagePaths: string[], outputPath: string, options?: any) =>
+    ipcRenderer.invoke("build-collage", imagePaths, outputPath, options),
 });
