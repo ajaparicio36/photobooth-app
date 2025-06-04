@@ -1,12 +1,11 @@
 import React from "react";
-import { QRCodeCanvas } from "qrcode.react";
+import { useNavigate } from "react-router-dom";
 
 const Home: React.FC = () => {
+  const navigate = useNavigate();
+
   return (
-    <div className="flex flex-col items-center justify-center h-screen bg-gray-100">
-      <p className="text-2xl font-bold mb-4">SCAN THISS</p>
-      <QRCodeCanvas value="yes" />
-    </div>
+    <div className="flex flex-col items-center justify-center h-screen bg-gray-100"></div>
   );
 };
 
