@@ -1,181 +1,64 @@
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
-import { PhotoModePage, PAPER_TYPE_PHOTO_COUNT } from "@/lib/enums";
-import { useEffect, useState, useRef } from "react";
-import path from "path";
+import { useEffect, useState } from "react";
+import Gphoto2CapturePhoto from "./Gphoto2CapturePhoto";
+import WebcamCapturePhoto from "./WebcamCapturePhoto";
+var CameraType;
+(function (CameraType) {
+    CameraType["NONE"] = "none";
+    CameraType["DSLR"] = "dslr";
+    CameraType["WEBCAM"] = "webcam";
+})(CameraType || (CameraType = {}));
 const CapturePhotoScreen = ({ setPhotos, setCurrentPage, paperType, }) => {
-    const [capturedPhotos, setCapturedPhotos] = useState([]);
-    const [cameraAvailable, setCameraAvailable] = useState(null);
-    const [isCapturing, setIsCapturing] = useState(false);
-    const [countdown, setCountdown] = useState(null);
-    const [sessionStarted, setSessionStarted] = useState(false);
-    const [useWebcam, setUseWebcam] = useState(false); // Track which camera type to use
-    const videoRef = useRef(null);
-    const canvasRef = useRef(null);
-    const streamRef = useRef(null);
-    const requiredPhotos = PAPER_TYPE_PHOTO_COUNT[paperType];
+    const [cameraType, setCameraType] = useState(null);
+    const [isCheckingCamera, setIsCheckingCamera] = useState(true);
     useEffect(() => {
         // Create tmp directory on component mount
         window.electronAPI.createTempFile(new ArrayBuffer(0), "temp").catch(() => {
             // Ignore error if directory already exists
         });
-        setPhotos([]);
-        setCapturedPhotos([]);
-        checkCameraAvailability();
+        detectAvailableCamera();
     }, []);
-    const checkCameraAvailability = async () => {
+    const detectAvailableCamera = async () => {
+        console.log("Detecting available cameras...");
         try {
-            // Check for gphoto2 cameras first
+            // First, try to detect DSLR cameras
             const cameras = await window.electronAPI.getAvailableCameras();
             if (cameras && cameras.length > 0) {
-                setCameraAvailable(true);
-                setUseWebcam(false);
+                console.log("DSLR cameras found:", cameras);
+                setCameraType(CameraType.DSLR);
+                setIsCheckingCamera(false);
                 return;
             }
         }
         catch (error) {
-            console.log("gphoto2 not available, checking webcam");
-            // Check if we should fallback to webcam
-            if (error?.shouldFallbackToWebcam) {
-                setUseWebcam(true);
-            }
+            console.log("DSLR cameras not available:", error.message);
         }
         // Fallback to webcam
         try {
+            console.log("Checking webcam availability...");
             const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-            streamRef.current = stream;
-            if (videoRef.current) {
-                videoRef.current.srcObject = stream;
-            }
-            setCameraAvailable(true);
-            setUseWebcam(true);
+            stream.getTracks().forEach((track) => track.stop()); // Stop the test stream
+            console.log("Webcam available");
+            setCameraType(CameraType.WEBCAM);
         }
         catch (error) {
-            console.error("No camera available:", error);
-            setCameraAvailable(false);
-            setUseWebcam(false);
+            console.error("No cameras available:", error);
+            setCameraType(CameraType.NONE);
         }
+        setIsCheckingCamera(false);
     };
-    const startPhotoSession = () => {
-        setSessionStarted(true);
-        startCountdown(5); // Initial 5-second countdown
-    };
-    const startCountdown = (seconds) => {
-        setCountdown(seconds);
-        if (seconds <= 0) {
-            setTimeout(capturePhoto, 100);
-            return;
-        }
-        setTimeout(() => {
-            startCountdown(seconds - 1);
-        }, 1000);
-    };
-    const capturePhoto = async () => {
-        if (isCapturing)
-            return;
-        setIsCapturing(true);
-        try {
-            let photoFile;
-            if (useWebcam) {
-                // Use webcam capture only
-                if (videoRef.current && canvasRef.current) {
-                    const canvas = canvasRef.current;
-                    const video = videoRef.current;
-                    const ctx = canvas.getContext("2d");
-                    canvas.width = video.videoWidth;
-                    canvas.height = video.videoHeight;
-                    ctx?.drawImage(video, 0, 0);
-                    const blob = await new Promise((resolve) => {
-                        canvas.toBlob((blob) => resolve(blob), "image/jpeg");
-                    });
-                    photoFile = new File([blob], `photo_${capturedPhotos.length + 1}.jpg`, {
-                        type: "image/jpeg",
-                    });
-                }
-                else {
-                    throw new Error("Webcam not available");
-                }
-            }
-            else {
-                // Use gphoto2 capture through WSL
-                const outputPath = path.join(require("os").tmpdir(), "photobooth-app", `photo_${Date.now()}.jpg`);
-                try {
-                    const result = await window.electronAPI.captureImage(outputPath);
-                    // Read the captured file and convert to File object
-                    const fileData = await window.electronAPI.readFile(result);
-                    const blob = new Blob([fileData], { type: "image/jpeg" });
-                    photoFile = new File([blob], `photo_${capturedPhotos.length + 1}.jpg`, {
-                        type: "image/jpeg",
-                    });
-                }
-                catch (gphotoError) {
-                    console.error("gphoto2 capture failed:", gphotoError);
-                    // If this is a WSL/camera error, switch to webcam permanently
-                    if (gphotoError?.shouldFallbackToWebcam) {
-                        console.log("Permanently switching to webcam due to gphoto2 failure");
-                        setUseWebcam(true);
-                        // Re-initialize webcam if needed
-                        if (!videoRef.current?.srcObject) {
-                            await checkCameraAvailability();
-                        }
-                        // Retry with webcam after a delay
-                        setIsCapturing(false);
-                        setTimeout(() => {
-                            capturePhoto(); // Retry immediately with webcam
-                        }, 500);
-                        return;
-                    }
-                    throw gphotoError;
-                }
-            }
-            const newPhotos = [...capturedPhotos, photoFile];
-            setCapturedPhotos(newPhotos);
-            if (newPhotos.length >= requiredPhotos) {
-                // All photos captured, move to next page
-                setPhotos(newPhotos);
-                setCurrentPage(PhotoModePage.SelectFilterPage);
-            }
-            else {
-                // More photos needed, start countdown for next photo
-                setTimeout(() => startCountdown(5), 1500); // Use 5 seconds for all photos
-            }
-        }
-        catch (error) {
-            console.error("Failed to capture photo:", error);
-            // Only try webcam fallback if we haven't already
-            if (!useWebcam) {
-                console.log("Attempting webcam fallback...");
-                setUseWebcam(true);
-                try {
-                    await checkCameraAvailability();
-                    // Retry capture with webcam after initialization
-                    setTimeout(() => {
-                        setIsCapturing(false);
-                        setTimeout(() => capturePhoto(), 500);
-                    }, 1000);
-                }
-                catch (webcamError) {
-                    console.error("Webcam fallback failed:", webcamError);
-                    setIsCapturing(false);
-                    alert("Failed to capture photo. Please check your camera connection.");
-                }
-                return;
-            }
-            // If webcam also fails, show error
-            console.error("Both gphoto2 and webcam capture failed");
-            setIsCapturing(false);
-            alert("Failed to capture photo. Please check your camera connection.");
-        }
-        finally {
-            // Reset capturing state after each photo
-            setIsCapturing(false);
-        }
-    };
-    if (cameraAvailable === null) {
-        return _jsx("div", { children: "Checking camera availability..." });
+    if (isCheckingCamera) {
+        return (_jsx("div", { className: "flex flex-col items-center justify-center h-screen bg-gray-100", children: _jsx("div", { className: "text-xl", children: "Detecting cameras..." }) }));
     }
-    if (cameraAvailable === false) {
-        return _jsx("div", { children: "No camera available. Please connect a camera." });
+    if (cameraType === CameraType.NONE) {
+        return (_jsxs("div", { className: "flex flex-col items-center justify-center h-screen bg-gray-100", children: [_jsx("h1", { className: "text-2xl font-bold mb-4", children: "No Camera Available" }), _jsx("p", { className: "mb-4 text-center", children: "Please connect a DSLR camera or ensure your webcam is working." }), _jsx("button", { onClick: detectAvailableCamera, className: "bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded", children: "Retry Detection" })] }));
     }
-    return (_jsxs("div", { className: "flex flex-col items-center justify-center h-screen bg-gray-100", children: [_jsx("h1", { className: "text-3xl font-bold mb-4", children: "Capture Photos" }), _jsxs("p", { className: "mb-2", children: [capturedPhotos.length, " of ", requiredPhotos, " photos captured"] }), _jsxs("p", { className: "mb-4 text-sm text-gray-600", children: ["Using: ", useWebcam ? "Webcam" : "DSLR Camera"] }), _jsxs("div", { className: "relative mb-4", children: [_jsx("video", { ref: videoRef, autoPlay: true, playsInline: true, className: "w-96 h-72 bg-black rounded", style: { display: useWebcam ? "block" : "none" } }), !useWebcam && (_jsx("div", { className: "w-96 h-72 bg-black rounded flex items-center justify-center", children: _jsx("span", { className: "text-white", children: "DSLR Camera Preview" }) })), _jsx("canvas", { ref: canvasRef, className: "hidden" }), countdown !== null && (_jsx("div", { className: "absolute inset-0 flex items-center justify-center bg-black bg-opacity-50 rounded", children: _jsx("div", { className: "text-white text-8xl font-bold", children: countdown }) }))] }), !sessionStarted ? (_jsx("button", { onClick: startPhotoSession, className: "bg-blue-500 hover:bg-blue-700 text-white font-bold py-4 px-8 rounded-lg", children: "Start Photo Session" })) : (_jsx("div", { className: "text-center", children: isCapturing ? (_jsx("div", { className: "text-xl font-bold", children: "Capturing Photo..." })) : countdown !== null ? (_jsx("div", { className: "text-xl", children: "Get Ready!" })) : (_jsx("div", { className: "text-xl", children: "Processing..." })) }))] }));
+    if (cameraType === CameraType.DSLR) {
+        return (_jsx(Gphoto2CapturePhoto, { setPhotos: setPhotos, setCurrentPage: setCurrentPage, paperType: paperType }));
+    }
+    if (cameraType === CameraType.WEBCAM) {
+        return (_jsx(WebcamCapturePhoto, { setPhotos: setPhotos, setCurrentPage: setCurrentPage, paperType: paperType }));
+    }
+    return null;
 };
 export default CapturePhotoScreen;
