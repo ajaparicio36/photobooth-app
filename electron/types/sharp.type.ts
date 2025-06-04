@@ -14,7 +14,7 @@ export interface SharpFilterOptions {
 }
 
 export interface CollageOptions {
-  spacing?: number;
+  spacing?: number; // Default: 10px for A6
   backgroundColor?: string;
   logoPath?: string;
   logoPosition?:
@@ -22,7 +22,9 @@ export interface CollageOptions {
     | "bottom-left"
     | "bottom-right"
     | "top-center";
-  logoSize?: number;
+  logoSize?: number; // Default: 60px for A6
+  paperSize?: "A6" | "A5" | "A4"; // Default: A6
+  orientation?: "portrait" | "landscape"; // Default: portrait for A6
 }
 
 export interface CollageResult {

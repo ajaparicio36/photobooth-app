@@ -166,34 +166,78 @@ export class SharpManager {
       }
 
       const {
-        spacing = 20,
+        spacing = 10,
         backgroundColor = "#ffffff",
         logoPath,
         logoPosition = "bottom-center",
-        logoSize = 100,
+        logoSize = 60,
       } = options;
 
-      const size = 600; // size of each photo
-      const canvasSize = size * 2 + spacing * 3;
+      // A6 dimensions: 105mm x 148mm at 300 DPI = 1240px x 1748px
+      // We'll use a slightly smaller canvas to ensure proper margins
+      const canvasWidth = 1200; // A6 width with margins
+      const canvasHeight = 1700; // A6 height with margins
 
-      // Resize all images to uniform squares
+      // Calculate photo dimensions for 2x2 grid
+      // Each photo should be landscape (3:2 aspect ratio) fitting in available space
+      const availableWidth = (canvasWidth - spacing * 3) / 2; // 2 photos per row, 3 spacing gaps
+      const availableHeight = (canvasHeight - spacing * 4 - logoSize) / 2; // 2 rows, 4 spacing gaps, logo space
+
+      // For landscape photos (3:2 aspect ratio), determine size based on available space
+      let photoWidth: number;
+      let photoHeight: number;
+
+      const targetAspectRatio = 3 / 2; // Landscape DSLR ratio
+
+      if (availableWidth / availableHeight > targetAspectRatio) {
+        // Height is the limiting factor
+        photoHeight = availableHeight;
+        photoWidth = photoHeight * targetAspectRatio;
+      } else {
+        // Width is the limiting factor
+        photoWidth = availableWidth;
+        photoHeight = photoWidth / targetAspectRatio;
+      }
+
+      // Ensure dimensions are integers
+      photoWidth = Math.floor(photoWidth);
+      photoHeight = Math.floor(photoHeight);
+
+      // Resize all images to uniform landscape rectangles with proper aspect ratio
       const resizedImages = await Promise.all(
         imagePaths.map(async (imgPath) => {
           return await sharp(imgPath)
-            .resize(size, size, { fit: "cover", position: "center" })
+            .resize(photoWidth, photoHeight, {
+              fit: "cover",
+              position: "center",
+            })
             .toBuffer();
         })
       );
 
+      // Calculate positions for 2x2 grid, centered on canvas
+      const gridWidth = photoWidth * 2 + spacing;
+      const gridHeight = photoHeight * 2 + spacing;
+      const startX = Math.floor((canvasWidth - gridWidth) / 2);
+      const startY = Math.floor((canvasHeight - gridHeight - logoSize) / 2);
+
       // Create collage composition array
       const composition = [
-        { input: resizedImages[0], left: spacing, top: spacing },
-        { input: resizedImages[1], left: size + spacing * 2, top: spacing },
-        { input: resizedImages[2], left: spacing, top: size + spacing * 2 },
+        { input: resizedImages[0], left: startX, top: startY },
+        {
+          input: resizedImages[1],
+          left: startX + photoWidth + spacing,
+          top: startY,
+        },
+        {
+          input: resizedImages[2],
+          left: startX,
+          top: startY + photoHeight + spacing,
+        },
         {
           input: resizedImages[3],
-          left: size + spacing * 2,
-          top: size + spacing * 2,
+          left: startX + photoWidth + spacing,
+          top: startY + photoHeight + spacing,
         },
       ];
 
@@ -208,24 +252,24 @@ export class SharpManager {
 
         switch (logoPosition) {
           case "bottom-center":
-            logoLeft = Math.floor((canvasSize - logoSize) / 2);
-            logoTop = canvasSize - logoSize - spacing;
+            logoLeft = Math.floor((canvasWidth - logoSize) / 2);
+            logoTop = canvasHeight - logoSize - spacing;
             break;
           case "bottom-left":
             logoLeft = spacing;
-            logoTop = canvasSize - logoSize - spacing;
+            logoTop = canvasHeight - logoSize - spacing;
             break;
           case "bottom-right":
-            logoLeft = canvasSize - logoSize - spacing;
-            logoTop = canvasSize - logoSize - spacing;
+            logoLeft = canvasWidth - logoSize - spacing;
+            logoTop = canvasHeight - logoSize - spacing;
             break;
           case "top-center":
-            logoLeft = Math.floor((canvasSize - logoSize) / 2);
+            logoLeft = Math.floor((canvasWidth - logoSize) / 2);
             logoTop = spacing;
             break;
           default:
-            logoLeft = Math.floor((canvasSize - logoSize) / 2);
-            logoTop = canvasSize - logoSize - spacing;
+            logoLeft = Math.floor((canvasWidth - logoSize) / 2);
+            logoTop = canvasHeight - logoSize - spacing;
         }
 
         composition.push({
@@ -235,11 +279,11 @@ export class SharpManager {
         });
       }
 
-      // Build the collage
+      // Build the collage with A6 dimensions
       const collage = sharp({
         create: {
-          width: canvasSize,
-          height: canvasSize,
+          width: canvasWidth,
+          height: canvasHeight,
           channels: 3,
           background: backgroundColor,
         },
@@ -262,7 +306,10 @@ export class SharpManager {
           const pdfBuffer = await new Promise<Buffer>((resolve, reject) => {
             imageToPdf(
               [jpegPath],
-              { size: "A4" },
+              {
+                size: "A6",
+                orientation: "portrait",
+              },
               (err: any, buffer: Buffer) => {
                 if (err) reject(err);
                 else resolve(buffer);
