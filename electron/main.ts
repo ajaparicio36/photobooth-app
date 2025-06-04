@@ -1,6 +1,6 @@
 import { app, BrowserWindow, ipcMain } from "electron";
 import * as path from "path";
-import { isDev } from "./util";
+import { isDev, isTestingProd } from "./util";
 import { cameraManager } from "./utils/camera";
 import { printerManager } from "./utils/printer";
 import { sharpManager } from "./utils/sharp";
@@ -11,11 +11,42 @@ app.commandLine.appendSwitch("disable-web-security");
 
 let mainWindow: BrowserWindow;
 
+// Initialize Sharp early in the main process
+async function initializeModules() {
+  try {
+    // Test Sharp availability with better error handling
+    const { sharpManager } = await import("./utils/sharp");
+
+    if (sharpManager.isSharpAvailable()) {
+      console.log("Sharp module is available and ready");
+    } else {
+      console.warn(
+        "Sharp module failed to initialize - trying to reinitialize..."
+      );
+      const reinitResult = await sharpManager.reinitializeSharp();
+      if (reinitResult) {
+        console.log("Sharp module successfully reinitialized");
+      } else {
+        console.error(
+          "Sharp module could not be initialized - image processing will be limited"
+        );
+      }
+    }
+  } catch (error) {
+    console.error("Module initialization failed:", error);
+    console.error("Some features may not work properly");
+  }
+}
+
 const createWindow = (): void => {
   // Debug logging
   console.log("NODE_ENV:", process.env.NODE_ENV);
   console.log("isDev:", isDev);
+  console.log("isTestingProd:", isTestingProd);
   console.log("app.isPackaged:", app.isPackaged);
+  console.log("app.getAppPath():", app.getAppPath());
+  console.log("process.resourcesPath:", process.resourcesPath);
+  console.log("__dirname:", __dirname);
 
   mainWindow = new BrowserWindow({
     width: 1200,
@@ -32,7 +63,13 @@ const createWindow = (): void => {
 
   // Show window when ready to prevent visual flash
   mainWindow.once("ready-to-show", () => {
+    console.log("Window ready to show");
     mainWindow.show();
+
+    // Only open dev tools in development or test:prod mode
+    if (isDev || isTestingProd) {
+      mainWindow.webContents.openDevTools();
+    }
   });
 
   if (isDev) {
@@ -40,7 +77,8 @@ const createWindow = (): void => {
     mainWindow.loadURL("http://localhost:5173").catch((err) => {
       console.error("Failed to load dev server:", err);
       // Fallback to a simple HTML page
-      mainWindow.loadURL(`data:text/html;charset=utf-8,
+      mainWindow.loadURL(
+        `data:text/html;charset=utf-8,
         <html>
           <body style="font-family: Arial; padding: 20px;">
             <h1>Development Server Not Running</h1>
@@ -49,19 +87,154 @@ const createWindow = (): void => {
             <p><strong>Make sure both commands are running in separate terminals!</strong></p>
           </body>
         </html>
-      `);
+      `
+      );
     });
     mainWindow.webContents.openDevTools();
   } else {
     console.log("Loading production build...");
-    mainWindow.loadFile(path.join(__dirname, "../dist/index.html"));
+
+    // For testing production build locally (not packaged) or actual packaged app
+    const localDistPath = path.join(__dirname, "../dist/index.html");
+    console.log("Testing production build at:", localDistPath);
+
+    if (fs.existsSync(localDistPath)) {
+      console.log("Loading production build from:", localDistPath);
+      // Remove hash parameter since HashRouter will handle routing
+      mainWindow.loadFile(localDistPath).catch((err) => {
+        console.error("Failed to load production build:", err);
+        mainWindow.loadURL(
+          `data:text/html;charset=utf-8,
+          <html>
+            <body style="font-family: Arial; padding: 20px;">
+              <h1>Production Build Error</h1>
+              <p>Failed to load: ${localDistPath}</p>
+              <p>Error: ${err.message}</p>
+              <p>Check the console for more details.</p>
+            </body>
+          </html>
+        `
+        );
+      });
+      return;
+    }
+
+    // If local dist doesn't exist, try packaged app paths
+    if (app.isPackaged) {
+      const possiblePaths = [
+        path.join(app.getAppPath(), "dist/index.html"),
+        path.join(process.resourcesPath, "app/dist/index.html"),
+        path.join(process.resourcesPath, "dist/index.html"),
+        path.join(__dirname, "../../dist/index.html"),
+      ];
+
+      let indexPath = "";
+      for (const testPath of possiblePaths) {
+        console.log(
+          "Testing packaged path:",
+          testPath,
+          "exists:",
+          fs.existsSync(testPath)
+        );
+        if (fs.existsSync(testPath)) {
+          indexPath = testPath;
+          break;
+        }
+      }
+
+      if (indexPath) {
+        console.log("Loading index.html from:", indexPath);
+        mainWindow.loadFile(indexPath).catch((err) => {
+          console.error("Failed to load index.html:", err);
+          // Show error page
+          mainWindow.loadURL(
+            `data:text/html;charset=utf-8,
+            <html>
+              <body style="font-family: Arial; padding: 20px;">
+                <h1>Packaged Build Error</h1>
+                <p>Failed to load the application build.</p>
+                <p>Error: ${err.message}</p>
+                <p>Tried to load: ${indexPath}</p>
+              </body>
+            </html>
+          `
+          );
+        });
+      } else {
+        console.error("Could not find index.html in packaged app");
+        console.log("Searched paths:", possiblePaths);
+
+        // List files in expected directories for debugging
+        possiblePaths.forEach((testPath) => {
+          const dir = path.dirname(testPath);
+          if (fs.existsSync(dir)) {
+            console.log(`Contents of ${dir}:`, fs.readdirSync(dir));
+          } else {
+            console.log(`Directory does not exist: ${dir}`);
+          }
+        });
+
+        // Show error page
+        mainWindow.loadURL(
+          `data:text/html;charset=utf-8,
+          <html>
+            <body style="font-family: Arial; padding: 20px;">
+              <h1>Packaged Build Missing</h1>
+              <p>The application build files were not found in the packaged app.</p>
+              <p>Please ensure the build completed successfully before packaging.</p>
+              <h3>Debug Info:</h3>
+              <p>isPackaged: ${app.isPackaged}</p>
+              <p>getAppPath: ${app.getAppPath()}</p>
+              <p>resourcesPath: ${process.resourcesPath}</p>
+              <p>__dirname: ${__dirname}</p>
+            </body>
+          </html>
+        `
+        );
+      }
+    } else {
+      // Not packaged and no local dist found
+      console.error("Production build not found. Run 'bun run build' first.");
+      mainWindow.loadURL(
+        `data:text/html;charset=utf-8,
+        <html>
+          <body style="font-family: Arial; padding: 20px;">
+            <h1>Production Build Missing</h1>
+            <p>No production build found at: ${localDistPath}</p>
+            <p>Please run the following commands:</p>
+            <ol>
+              <li><code>bun run build</code> - Build the frontend</li>
+              <li><code>npm run test:prod</code> - Test production build</li>
+            </ol>
+            <p>Or run <code>npm run debug:build</code> to see what files are generated.</p>
+          </body>
+        </html>
+      `
+      );
+    }
   }
 
   // Add error handling for web contents
   mainWindow.webContents.on(
     "did-fail-load",
-    (event, errorCode, errorDescription) => {
-      console.error("Failed to load page:", errorCode, errorDescription);
+    (event, errorCode, errorDescription, validatedURL) => {
+      console.error(
+        "Failed to load page:",
+        errorCode,
+        errorDescription,
+        validatedURL
+      );
+    }
+  );
+
+  // Add console message logging
+  mainWindow.webContents.on(
+    "console-message",
+    (event, level, message, line, sourceId) => {
+      console.log(`Console [${level}]:`, message);
+      if (line && sourceId) {
+        console.log(`  at ${sourceId}:${line}`);
+      }
     }
   );
 };
@@ -340,7 +513,10 @@ ipcMain.handle("cleanup-temp-files", async () => {
   }
 });
 
-app.whenReady().then(createWindow);
+app.whenReady().then(async () => {
+  await initializeModules();
+  createWindow();
+});
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {

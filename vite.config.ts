@@ -16,12 +16,22 @@ export default defineConfig({
     strictPort: true,
   },
   base: "./",
+  build: {
+    outDir: "dist",
+    assetsDir: "assets",
+    emptyOutDir: true,
+    rollupOptions: {
+      input: {
+        main: path.resolve(__dirname, "index.html"),
+      },
+      output: {
+        manualChunks: undefined,
+      },
+    },
+  },
   css: {
     postcss: {
-      plugins: [
-        require('tailwindcss'),
-        require('autoprefixer'),
-      ],
+      plugins: [require("tailwindcss"), require("autoprefixer")],
     },
   },
 });

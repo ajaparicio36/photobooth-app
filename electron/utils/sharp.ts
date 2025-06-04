@@ -1,5 +1,94 @@
-import * as sharp from "sharp";
+import * as path from "path";
 import * as fs from "fs";
+import { app } from "electron";
+
+// Sharp import with comprehensive error handling and fallback
+let sharp: any = null;
+let sharpAvailable = false;
+
+// PDFKit import with error handling
+let PDFDocument: any = null;
+let pdfAvailable = false;
+
+async function initializeSharp(): Promise<void> {
+  try {
+    // Try to load Sharp
+    if (app.isPackaged) {
+      // In production, try from unpacked location first
+      try {
+        const unpackedSharpPath = path.join(
+          process.resourcesPath,
+          "app.asar.unpacked",
+          "node_modules",
+          "sharp"
+        );
+        sharp = require(unpackedSharpPath);
+        console.log("Sharp loaded from unpacked path");
+      } catch {
+        // Fallback to regular require
+        sharp = require("sharp");
+        console.log("Sharp loaded from regular path");
+      }
+    } else {
+      sharp = require("sharp");
+      console.log("Sharp loaded in development");
+    }
+
+    // Test Sharp functionality
+    await sharp({
+      create: {
+        width: 10,
+        height: 10,
+        channels: 3,
+        background: { r: 255, g: 255, b: 255 },
+      },
+    })
+      .jpeg()
+      .toBuffer();
+
+    sharpAvailable = true;
+    console.log("Sharp initialization successful");
+  } catch (error) {
+    console.error("Failed to initialize Sharp:", error);
+    sharp = null;
+    sharpAvailable = false;
+  }
+}
+
+async function initializePDFKit(): Promise<void> {
+  try {
+    // Try to load PDFKit
+    if (app.isPackaged) {
+      try {
+        const unpackedPDFPath = path.join(
+          process.resourcesPath,
+          "app.asar.unpacked",
+          "node_modules",
+          "pdfkit"
+        );
+        PDFDocument = require(unpackedPDFPath);
+        console.log("PDFKit loaded from unpacked path");
+      } catch {
+        PDFDocument = require("pdfkit");
+        console.log("PDFKit loaded from regular path");
+      }
+    } else {
+      PDFDocument = require("pdfkit");
+      console.log("PDFKit loaded in development");
+    }
+
+    pdfAvailable = true;
+    console.log("PDFKit initialization successful");
+  } catch (error) {
+    console.error("Failed to initialize PDFKit:", error);
+    PDFDocument = null;
+    pdfAvailable = false;
+  }
+}
+
+// Initialize modules when this file loads
+Promise.all([initializeSharp(), initializePDFKit()]);
+
 import { sharpPresets } from "../presets/sharp.preset";
 import {
   SharpFilterOptions,
@@ -9,16 +98,45 @@ import {
   AvailableFilter,
 } from "../types/sharp.type";
 
-// Import PDFDocument from pdfkit directly
-import PDFDocument from "pdfkit";
-
 export class SharpManager {
+  private ensureSharpAvailable(): void {
+    if (!sharpAvailable || !sharp) {
+      throw new Error(
+        "Sharp module is not available. Image processing features are disabled."
+      );
+    }
+  }
+
+  private ensurePDFAvailable(): void {
+    if (!pdfAvailable || !PDFDocument) {
+      throw new Error(
+        "PDFKit module is not available. PDF generation features are disabled."
+      );
+    }
+  }
+
+  async reinitializeSharp(): Promise<boolean> {
+    await initializeSharp();
+    await initializePDFKit();
+    return sharpAvailable;
+  }
+
+  isSharpAvailable(): boolean {
+    return sharpAvailable;
+  }
+
+  isPDFAvailable(): boolean {
+    return pdfAvailable;
+  }
+
   async applyFilter(
     inputPath: string,
     filterName: string,
     outputPath: string
   ): Promise<FilterResult> {
     try {
+      this.ensureSharpAvailable();
+
       if (!fs.existsSync(inputPath)) {
         throw new Error("Input image file not found");
       }
@@ -28,7 +146,7 @@ export class SharpManager {
         throw new Error(`Filter "${filterName}" not found`);
       }
 
-      let pipeline = sharp.default(inputPath);
+      let pipeline = sharp(inputPath);
 
       // Apply grayscale first if needed
       if (preset.grayscale) {
@@ -85,11 +203,13 @@ export class SharpManager {
     outputPath: string
   ): Promise<FilterResult> {
     try {
+      this.ensureSharpAvailable();
+
       if (!fs.existsSync(inputPath)) {
         throw new Error("Input image file not found");
       }
 
-      let pipeline = sharp.default(inputPath);
+      let pipeline = sharp(inputPath);
 
       // Apply grayscale first if needed
       if (options.grayscale) {
@@ -150,6 +270,9 @@ export class SharpManager {
   ): Promise<void> {
     return new Promise((resolve, reject) => {
       try {
+        this.ensureSharpAvailable();
+        this.ensurePDFAvailable();
+
         const doc = new PDFDocument({
           size: [297.64, 419.53], // A6 size in points (4.15" x 5.83")
           margin: 0,
@@ -159,10 +282,9 @@ export class SharpManager {
         doc.pipe(stream);
 
         // Get image dimensions
-        sharp
-          .default(imagePath)
+        sharp(imagePath)
           .metadata()
-          .then((metadata) => {
+          .then((metadata: any) => {
             const imageWidth = metadata.width || 0;
             const imageHeight = metadata.height || 0;
 
@@ -203,6 +325,8 @@ export class SharpManager {
     options: CollageOptions = {}
   ): Promise<CollageResult> {
     try {
+      this.ensureSharpAvailable();
+
       // Validate input images
       for (const imagePath of imagePaths) {
         if (!fs.existsSync(imagePath)) {
@@ -259,8 +383,7 @@ export class SharpManager {
 
         const resizedImages = await Promise.all(
           uniqueImages.map(async (imgPath) => {
-            return await sharp
-              .default(imgPath)
+            return await sharp(imgPath)
               .resize(photoWidth, photoHeight, {
                 fit: "cover",
                 position: "center",
@@ -313,8 +436,7 @@ export class SharpManager {
 
         const resizedImages = await Promise.all(
           imagePaths.map(async (imgPath) => {
-            return await sharp
-              .default(imgPath)
+            return await sharp(imgPath)
               .resize(photoWidth, photoHeight, {
                 fit: "cover",
                 position: "center",
@@ -350,8 +472,7 @@ export class SharpManager {
 
       // Add logo if provided
       if (logoPath && fs.existsSync(logoPath)) {
-        const logoBuffer = await sharp
-          .default(logoPath)
+        const logoBuffer = await sharp(logoPath)
           .resize(logoSize, logoSize, { fit: "contain" })
           .toBuffer();
 
@@ -388,7 +509,7 @@ export class SharpManager {
       }
 
       // Build the collage with A6 dimensions
-      const collage = sharp.default({
+      const collage = sharp({
         create: {
           width: canvasWidth,
           height: canvasHeight,
@@ -405,14 +526,18 @@ export class SharpManager {
         .jpeg({ quality: 95 })
         .toFile(jpegPath);
 
-      // Generate PDF using custom implementation
+      // Generate PDF using custom implementation - only if PDFKit is available
       let pdfPath = "";
-      try {
-        pdfPath = outputPath.replace(/\.[^/.]+$/, ".pdf");
-        await this.createPDFFromImage(jpegPath, pdfPath);
-      } catch (pdfError) {
-        console.warn("PDF generation failed:", pdfError);
-        pdfPath = "";
+      if (pdfAvailable) {
+        try {
+          pdfPath = outputPath.replace(/\.[^/.]+$/, ".pdf");
+          await this.createPDFFromImage(jpegPath, pdfPath);
+        } catch (pdfError) {
+          console.warn("PDF generation failed:", pdfError);
+          pdfPath = "";
+        }
+      } else {
+        console.warn("PDFKit not available, skipping PDF generation");
       }
 
       return {
