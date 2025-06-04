@@ -1,5 +1,9 @@
 import { PhotoModePage } from "@/lib/enums";
 import React, { useState, useEffect } from "react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { ArrowLeft, Palette, Loader2 } from "lucide-react";
 
 interface SelectFilterPageProps {
   photos: File[];
@@ -152,76 +156,154 @@ const SelectFilterPage: React.FC<SelectFilterPageProps> = ({
   };
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100 p-4">
-      <h2 className="text-3xl font-bold mb-6">Select Filter</h2>
-
-      {/* Preview Section */}
-      <div className="bg-white p-4 rounded-lg shadow-lg mb-6">
-        <h3 className="text-lg font-bold mb-2 text-center">Preview</h3>
-        {previewUrl ? (
-          <img
-            src={previewUrl}
-            alt="Filter Preview"
-            className="w-64 h-48 object-cover rounded border"
-          />
-        ) : (
-          <div className="w-64 h-48 bg-gray-200 rounded border flex items-center justify-center">
-            <span className="text-gray-500">Generating preview...</span>
-          </div>
-        )}
-      </div>
-
-      {/* Filter Selection - Horizontal Scroll */}
-      <div className="w-full max-w-4xl mb-6">
-        <h3 className="text-lg font-bold mb-4 text-center">Choose Filter</h3>
-        <div className="flex gap-4 overflow-x-auto pb-4 px-4">
-          <button
-            onClick={() => setSelectedFilter("")}
-            className={`flex-shrink-0 p-4 rounded border min-w-[120px] ${
-              !selectedFilter ? "bg-blue-500 text-white" : "bg-white"
-            }`}
+    <div className="h-screen mono-gradient flex flex-col overflow-hidden">
+      {/* Header */}
+      <div className="p-4 border-b border-mono-200 bg-white/50 backdrop-blur-sm flex-shrink-0">
+        <div className="max-w-6xl mx-auto flex items-center justify-between">
+          <Button
+            variant="ghost"
+            onClick={() => setCurrentPage(PhotoModePage.CapturePhotoScreen)}
+            className="text-mono-700 hover:text-mono-900"
           >
-            <div className="text-sm font-bold">No Filter</div>
-            <div className="text-xs">Original</div>
-          </button>
-          {availableFilters.map((filter) => (
-            <button
-              key={filter.key}
-              onClick={() => setSelectedFilter(filter.key)}
-              className={`flex-shrink-0 p-4 rounded border min-w-[120px] ${
-                selectedFilter === filter.key
-                  ? "bg-blue-500 text-white"
-                  : "bg-white"
-              }`}
-            >
-              <div className="text-sm font-bold">{filter.name}</div>
-              <div className="text-xs">{filter.description}</div>
-            </button>
-          ))}
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            Back to Capture
+          </Button>
+          <div className="text-center">
+            <h1 className="text-xl font-bold text-mono-900">Select Filter</h1>
+            <p className="text-xs text-mono-600">Enhance your photos</p>
+          </div>
+          <div className="w-24"></div>
         </div>
       </div>
 
-      {/* Photos Grid - 2x2 */}
-      <div className="grid grid-cols-2 gap-4 mb-6">
-        {previewUrls.map((url, index) => (
-          <div key={index} className="text-center">
-            <img
-              src={url}
-              alt={`Photo ${index + 1}`}
-              className="w-48 h-36 object-cover rounded border"
-            />
-            <div className="text-sm font-bold mt-2">Photo {index + 1}</div>
-          </div>
-        ))}
-      </div>
+      {/* Main Content */}
+      <div className="flex-1 p-4 min-h-0">
+        <div className="max-w-6xl mx-auto h-full">
+          <div className="grid lg:grid-cols-3 gap-4 h-full">
+            {/* Preview Section */}
+            <Card className="glass-card lg:col-span-1">
+              <CardContent className="p-4 h-full flex flex-col">
+                <div className="flex items-center gap-2 mb-3">
+                  <Palette className="w-4 h-4 text-mono-700" />
+                  <h3 className="text-base font-bold text-mono-900">
+                    Filter Preview
+                  </h3>
+                  {selectedFilter && (
+                    <Badge variant="secondary" className="text-xs">
+                      {availableFilters.find((f) => f.key === selectedFilter)
+                        ?.name || selectedFilter}
+                    </Badge>
+                  )}
+                </div>
+                <div className="flex-1 flex items-center justify-center">
+                  {previewUrl ? (
+                    <img
+                      src={previewUrl}
+                      alt="Filter Preview"
+                      className="max-w-full max-h-full object-contain rounded-lg border border-mono-200 shadow-lg"
+                    />
+                  ) : (
+                    <div className="w-full aspect-square bg-mono-100 rounded-lg border border-mono-200 flex items-center justify-center">
+                      <div className="text-center text-mono-500">
+                        <Loader2 className="w-6 h-6 mx-auto mb-2 animate-spin" />
+                        <span className="text-xs">Generating preview...</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
 
-      <button
-        onClick={applyFilterToPhotos}
-        disabled={isApplying}
-        className="bg-green-500 hover:bg-green-700 disabled:bg-gray-400 text-white font-bold py-4 px-8 rounded-lg"
-      >
-        {isApplying ? "Applying Filter..." : "Continue"}
-      </button>
+            {/* Filter Selection and Photos */}
+            <div className="lg:col-span-2 flex flex-col gap-4 min-h-0">
+              {/* Filter Selection */}
+              <Card className="glass-card flex-shrink-0">
+                <CardContent className="p-4">
+                  <h3 className="text-base font-bold text-mono-900 mb-3">
+                    Choose Filter
+                  </h3>
+                  <div className="flex gap-3 overflow-x-auto pb-2">
+                    <button
+                      onClick={() => setSelectedFilter("")}
+                      className={`flex-shrink-0 p-3 rounded-lg border-2 transition-all duration-200 min-w-[100px] ${
+                        !selectedFilter
+                          ? "border-mono-900 bg-mono-900 text-white shadow-lg"
+                          : "border-mono-200 bg-white hover:border-mono-400 hover:shadow-md"
+                      }`}
+                    >
+                      <div className="text-center">
+                        <div className="w-8 h-8 mx-auto mb-1 rounded-lg bg-mono-100 flex items-center justify-center">
+                          <div className="w-6 h-6 bg-gradient-to-br from-mono-300 to-mono-500 rounded"></div>
+                        </div>
+                        <div className="font-bold text-xs">No Filter</div>
+                        <div className="text-xs opacity-75">Original</div>
+                      </div>
+                    </button>
+                    {availableFilters.map((filter) => (
+                      <button
+                        key={filter.key}
+                        onClick={() => setSelectedFilter(filter.key)}
+                        className={`flex-shrink-0 p-3 rounded-lg border-2 transition-all duration-200 min-w-[100px] ${
+                          selectedFilter === filter.key
+                            ? "border-mono-900 bg-mono-900 text-white shadow-lg"
+                            : "border-mono-200 bg-white hover:border-mono-400 hover:shadow-md"
+                        }`}
+                      >
+                        <div className="text-center">
+                          <div className="w-8 h-8 mx-auto mb-1 rounded-lg bg-mono-100 flex items-center justify-center">
+                            <Palette className="w-4 h-4 text-mono-600" />
+                          </div>
+                          <div className="font-bold text-xs">{filter.name}</div>
+                          <div className="text-xs opacity-75">
+                            {filter.description}
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Photos Grid */}
+              <Card className="glass-card flex-1 min-h-0">
+                <CardContent className="p-4 h-full flex flex-col">
+                  <h3 className="text-base font-bold text-mono-900 mb-3">
+                    Your Photos
+                  </h3>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 flex-1">
+                    {previewUrls.map((url, index) => (
+                      <div key={index} className="text-center">
+                        <img
+                          src={url}
+                          alt={`Photo ${index + 1}`}
+                          className="w-full aspect-square object-cover rounded-lg border border-mono-200 shadow-sm"
+                        />
+                        <Badge variant="outline" className="mt-1 text-xs">
+                          Photo {index + 1}
+                        </Badge>
+                      </div>
+                    ))}
+                  </div>
+                  <Button
+                    onClick={applyFilterToPhotos}
+                    disabled={isApplying}
+                    className="bg-mono-900 hover:bg-mono-800 text-white mt-3"
+                  >
+                    {isApplying ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Applying Filter...
+                      </>
+                    ) : (
+                      <>Continue to Layout</>
+                    )}
+                  </Button>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 };

@@ -1,5 +1,8 @@
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { useEffect, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Camera, Loader2, AlertCircle } from "lucide-react";
 import Gphoto2CapturePhoto from "./Gphoto2CapturePhoto";
 import WebcamCapturePhoto from "./WebcamCapturePhoto";
 var CameraType;
@@ -48,10 +51,10 @@ const CapturePhotoScreen = ({ setPhotos, setCurrentPage, paperType, }) => {
         setIsCheckingCamera(false);
     };
     if (isCheckingCamera) {
-        return (_jsx("div", { className: "flex flex-col items-center justify-center h-screen bg-gray-100", children: _jsx("div", { className: "text-xl", children: "Detecting cameras..." }) }));
+        return (_jsx("div", { className: "h-screen mono-gradient flex items-center justify-center p-4 overflow-hidden", children: _jsx(Card, { className: "glass-card max-w-md w-full", children: _jsxs(CardContent, { className: "p-6 text-center", children: [_jsx("div", { className: "w-12 h-12 mx-auto mb-4 rounded-full bg-mono-100 flex items-center justify-center", children: _jsx(Loader2, { className: "w-6 h-6 text-mono-900 animate-spin" }) }), _jsx("h2", { className: "text-xl font-bold text-mono-900 mb-2", children: "Detecting Cameras" }), _jsx("p", { className: "text-mono-600 text-sm", children: "Searching for available camera devices..." })] }) }) }));
     }
     if (cameraType === CameraType.NONE) {
-        return (_jsxs("div", { className: "flex flex-col items-center justify-center h-screen bg-gray-100", children: [_jsx("h1", { className: "text-2xl font-bold mb-4", children: "No Camera Available" }), _jsx("p", { className: "mb-4 text-center", children: "Please connect a DSLR camera or ensure your webcam is working." }), _jsx("button", { onClick: detectAvailableCamera, className: "bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded", children: "Retry Detection" })] }));
+        return (_jsx("div", { className: "h-screen mono-gradient flex items-center justify-center p-4 overflow-hidden", children: _jsx(Card, { className: "glass-card max-w-md w-full", children: _jsxs(CardContent, { className: "p-6 text-center", children: [_jsx("div", { className: "w-12 h-12 mx-auto mb-4 rounded-full bg-red-100 flex items-center justify-center", children: _jsx(AlertCircle, { className: "w-6 h-6 text-red-600" }) }), _jsx("h2", { className: "text-xl font-bold text-mono-900 mb-2", children: "No Camera Available" }), _jsx("p", { className: "text-mono-600 mb-4 text-sm", children: "Please connect a DSLR camera or ensure your webcam is working properly." }), _jsxs(Button, { onClick: detectAvailableCamera, className: "w-full bg-mono-900 hover:bg-mono-800 text-white", children: [_jsx(Camera, { className: "w-4 h-4 mr-2" }), "Retry Detection"] })] }) }) }));
     }
     if (cameraType === CameraType.DSLR) {
         return (_jsx(Gphoto2CapturePhoto, { setPhotos: setPhotos, setCurrentPage: setCurrentPage, paperType: paperType }));

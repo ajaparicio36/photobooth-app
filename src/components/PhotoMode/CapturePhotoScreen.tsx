@@ -1,5 +1,8 @@
 import { PaperType, PhotoModePage } from "@/lib/enums";
 import React, { useEffect, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Camera, Loader2, AlertCircle } from "lucide-react";
 import Gphoto2CapturePhoto from "./Gphoto2CapturePhoto";
 import WebcamCapturePhoto from "./WebcamCapturePhoto";
 
@@ -65,25 +68,48 @@ const CapturePhotoScreen: React.FC<CapturePhotoScreenProps> = ({
 
   if (isCheckingCamera) {
     return (
-      <div className="flex flex-col items-center justify-center h-screen bg-gray-100">
-        <div className="text-xl">Detecting cameras...</div>
+      <div className="h-screen mono-gradient flex items-center justify-center p-4 overflow-hidden">
+        <Card className="glass-card max-w-md w-full">
+          <CardContent className="p-6 text-center">
+            <div className="w-12 h-12 mx-auto mb-4 rounded-full bg-mono-100 flex items-center justify-center">
+              <Loader2 className="w-6 h-6 text-mono-900 animate-spin" />
+            </div>
+            <h2 className="text-xl font-bold text-mono-900 mb-2">
+              Detecting Cameras
+            </h2>
+            <p className="text-mono-600 text-sm">
+              Searching for available camera devices...
+            </p>
+          </CardContent>
+        </Card>
       </div>
     );
   }
 
   if (cameraType === CameraType.NONE) {
     return (
-      <div className="flex flex-col items-center justify-center h-screen bg-gray-100">
-        <h1 className="text-2xl font-bold mb-4">No Camera Available</h1>
-        <p className="mb-4 text-center">
-          Please connect a DSLR camera or ensure your webcam is working.
-        </p>
-        <button
-          onClick={detectAvailableCamera}
-          className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
-        >
-          Retry Detection
-        </button>
+      <div className="h-screen mono-gradient flex items-center justify-center p-4 overflow-hidden">
+        <Card className="glass-card max-w-md w-full">
+          <CardContent className="p-6 text-center">
+            <div className="w-12 h-12 mx-auto mb-4 rounded-full bg-red-100 flex items-center justify-center">
+              <AlertCircle className="w-6 h-6 text-red-600" />
+            </div>
+            <h2 className="text-xl font-bold text-mono-900 mb-2">
+              No Camera Available
+            </h2>
+            <p className="text-mono-600 mb-4 text-sm">
+              Please connect a DSLR camera or ensure your webcam is working
+              properly.
+            </p>
+            <Button
+              onClick={detectAvailableCamera}
+              className="w-full bg-mono-900 hover:bg-mono-800 text-white"
+            >
+              <Camera className="w-4 h-4 mr-2" />
+              Retry Detection
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     );
   }

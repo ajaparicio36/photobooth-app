@@ -1,5 +1,9 @@
 import { PaperType, PhotoModePage, PAPER_TYPE_PHOTO_COUNT } from "@/lib/enums";
 import React, { useState, useEffect } from "react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { ArrowLeft, GripVertical, Loader2, Layout } from "lucide-react";
 import {
   DndContext,
   closestCenter,
@@ -62,22 +66,29 @@ const SortablePhoto: React.FC<SortablePhotoProps> = ({
   }, [photo]);
 
   return (
-    <div
+    <Card
       ref={setNodeRef}
       style={style}
       {...attributes}
       {...listeners}
-      className="relative bg-white border-2 border-dashed border-gray-300 rounded-lg p-2 cursor-move hover:border-blue-400 transition-colors"
+      className={`glass-card cursor-move transition-all duration-200 group ${
+        isDragging ? "shadow-2xl scale-105" : "hover:shadow-lg"
+      }`}
     >
-      <div className="text-xs font-bold mb-1 text-center">
-        Photo {originalIndex + 1}
-      </div>
-      <img
-        src={previewUrl}
-        alt={`Photo ${originalIndex + 1}`}
-        className="w-full h-32 object-cover rounded"
-      />
-    </div>
+      <CardContent className="p-4">
+        <div className="flex items-center justify-between mb-2">
+          <Badge variant="secondary" className="text-xs">
+            Photo {originalIndex + 1}
+          </Badge>
+          <GripVertical className="w-4 h-4 text-mono-400 group-hover:text-mono-600" />
+        </div>
+        <img
+          src={previewUrl}
+          alt={`Photo ${originalIndex + 1}`}
+          className="w-full aspect-square object-cover rounded-lg"
+        />
+      </CardContent>
+    </Card>
   );
 };
 
@@ -187,72 +198,159 @@ const OrganizeCollage: React.FC<OrganizeCollageProps> = ({
   };
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100 p-4">
-      <h2 className="text-3xl font-bold mb-6">Organize Your Collage</h2>
-
-      <div className="mb-4 text-center">
-        <p className="text-lg">Paper Type: {paperType}</p>
-        {is2x6Layout && (
-          <p className="text-sm text-gray-600">
-            Organize photos on one side - they will be duplicated on the right
-          </p>
-        )}
-      </div>
-
-      <div className="bg-white p-6 rounded-lg shadow-lg mb-6">
-        <h3 className="text-xl font-bold mb-4 text-center">Drag to Reorder</h3>
-
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragEnd={handleDragEnd}
-        >
-          <SortableContext
-            items={organizedPhotos.map((_, index) => `photo-${index}`)}
-            strategy={verticalListSortingStrategy}
+    <div className="h-screen mono-gradient flex flex-col overflow-hidden">
+      {/* Header */}
+      <div className="p-4 border-b border-mono-200 bg-white/50 backdrop-blur-sm flex-shrink-0">
+        <div className="max-w-6xl mx-auto flex items-center justify-between">
+          <Button
+            variant="ghost"
+            onClick={() => setCurrentPage(PhotoModePage.SelectFilterPage)}
+            className="text-mono-700 hover:text-mono-900"
           >
-            <div
-              className={`grid gap-4 ${
-                is2x6Layout ? "grid-cols-1 max-w-xs" : "grid-cols-2 max-w-md"
-              }`}
-            >
-              {organizedPhotos.slice(0, requiredPhotos).map((photo, index) => (
-                <SortablePhoto
-                  key={`photo-${index}`}
-                  id={`photo-${index}`}
-                  photo={photo}
-                  index={index}
-                  originalIndex={originalIndices[index]}
-                />
-              ))}
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            Back to Filters
+          </Button>
+          <div className="text-center">
+            <h1 className="text-xl font-bold text-mono-900">Organize Layout</h1>
+            <div className="flex items-center justify-center gap-2 mt-1">
+              <Badge variant="secondary" className="text-xs">
+                {paperType}
+              </Badge>
+              {is2x6Layout && (
+                <Badge variant="outline" className="text-xs">
+                  Mirror Layout
+                </Badge>
+              )}
             </div>
-          </SortableContext>
-        </DndContext>
+          </div>
+          <div className="w-24"></div>
+        </div>
       </div>
 
-      {is2x6Layout && (
-        <div className="bg-blue-50 p-4 rounded-lg mb-6 max-w-md">
-          <h4 className="font-bold mb-2">Preview Layout (2x6):</h4>
-          <div className="flex gap-2">
-            <div className="flex-1 text-center text-xs">
-              <div className="bg-white border rounded p-2">Left Side</div>
-              <div className="text-gray-600">Your arrangement</div>
-            </div>
-            <div className="flex-1 text-center text-xs">
-              <div className="bg-white border rounded p-2">Right Side</div>
-              <div className="text-gray-600">Duplicate copy</div>
+      {/* Main Content */}
+      <div className="flex-1 p-4 min-h-0">
+        <div className="max-w-4xl mx-auto h-full">
+          <div className="grid lg:grid-cols-3 gap-4 h-full">
+            {/* Instructions */}
+            <Card className="glass-card lg:col-span-3 flex-shrink-0">
+              <CardContent className="p-4 text-center">
+                <div className="flex items-center justify-center gap-2 mb-2">
+                  <Layout className="w-4 h-4 text-mono-700" />
+                  <h3 className="text-base font-bold text-mono-900">
+                    Arrange Your Photos
+                  </h3>
+                </div>
+                <p className="text-mono-600 text-sm mb-1">
+                  Drag and drop photos to organize your collage layout
+                </p>
+                {is2x6Layout && (
+                  <p className="text-xs text-mono-500">
+                    Photos will be duplicated on the right side for 2×6 format
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Photo Organization */}
+            <Card className="glass-card lg:col-span-2 min-h-0">
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <GripVertical className="w-4 h-4" />
+                  Drag to Reorder
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="flex-1 min-h-0">
+                <DndContext
+                  sensors={sensors}
+                  collisionDetection={closestCenter}
+                  onDragEnd={handleDragEnd}
+                >
+                  <SortableContext
+                    items={organizedPhotos.map((_, index) => `photo-${index}`)}
+                    strategy={verticalListSortingStrategy}
+                  >
+                    <div
+                      className={`grid gap-3 h-full ${
+                        is2x6Layout
+                          ? "grid-cols-1 max-w-xs mx-auto"
+                          : "grid-cols-2 max-w-lg mx-auto"
+                      }`}
+                    >
+                      {organizedPhotos
+                        .slice(0, requiredPhotos)
+                        .map((photo, index) => (
+                          <SortablePhoto
+                            key={`photo-${index}`}
+                            id={`photo-${index}`}
+                            photo={photo}
+                            index={index}
+                            originalIndex={originalIndices[index]}
+                          />
+                        ))}
+                    </div>
+                  </SortableContext>
+                </DndContext>
+              </CardContent>
+            </Card>
+
+            {/* 2x6 Layout Preview + Build Button */}
+            <div className="lg:col-span-1 flex flex-col gap-4">
+              {is2x6Layout && (
+                <Card className="glass-card flex-1">
+                  <CardContent className="p-4 h-full flex flex-col">
+                    <h4 className="font-bold text-mono-900 mb-3 text-center text-sm">
+                      Final Layout Preview (2×6)
+                    </h4>
+                    <div className="flex gap-2 flex-1">
+                      <div className="flex-1 text-center">
+                        <div className="bg-white border-2 border-dashed border-mono-300 rounded-lg p-2 h-full flex flex-col justify-center">
+                          <div className="text-xs font-medium text-mono-700 mb-1">
+                            Left Side
+                          </div>
+                          <div className="text-xs text-mono-500">
+                            Your arrangement
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex-1 text-center">
+                        <div className="bg-white border-2 border-dashed border-mono-300 rounded-lg p-2 h-full flex flex-col justify-center">
+                          <div className="text-xs font-medium text-mono-700 mb-1">
+                            Right Side
+                          </div>
+                          <div className="text-xs text-mono-500">
+                            Duplicate copy
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Build Collage Button */}
+              <Card className="glass-card flex-shrink-0">
+                <CardContent className="p-4 text-center">
+                  <Button
+                    onClick={buildCollage}
+                    disabled={isBuilding}
+                    size="lg"
+                    className="bg-mono-900 hover:bg-mono-800 text-white w-full"
+                  >
+                    {isBuilding ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Building...
+                      </>
+                    ) : (
+                      <>Build Collage & Print</>
+                    )}
+                  </Button>
+                </CardContent>
+              </Card>
             </div>
           </div>
         </div>
-      )}
-
-      <button
-        onClick={buildCollage}
-        disabled={isBuilding}
-        className="bg-green-500 hover:bg-green-700 disabled:bg-gray-400 text-white font-bold py-4 px-8 rounded-lg"
-      >
-        {isBuilding ? "Building Collage..." : "Build Collage & Print"}
-      </button>
+      </div>
     </div>
   );
 };

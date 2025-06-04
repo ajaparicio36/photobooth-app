@@ -1,5 +1,29 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Printer,
+  Download,
+  CheckCircle,
+  AlertCircle,
+  Home,
+  Loader2,
+} from "lucide-react";
 
 interface PrintQueueProps {
   printFile: File | null;
@@ -130,146 +154,259 @@ const PrintQueue: React.FC<PrintQueueProps> = ({ printFile }) => {
 
   if (!printFile) {
     return (
-      <div className="flex flex-col items-center justify-center h-screen bg-gray-100">
-        <h2 className="text-3xl font-bold mb-4">Print Queue</h2>
-        <p className="text-gray-600">No print file available</p>
-        <button
-          onClick={() => navigate("/")}
-          className="mt-4 bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
-        >
-          Go Home
-        </button>
+      <div className="min-h-screen mono-gradient flex items-center justify-center p-6">
+        <Card className="glass-card max-w-md w-full">
+          <CardContent className="p-8 text-center">
+            <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-red-100 flex items-center justify-center">
+              <AlertCircle className="w-8 h-8 text-red-600" />
+            </div>
+            <h2 className="text-2xl font-bold text-mono-900 mb-3">
+              No Print File Available
+            </h2>
+            <p className="text-mono-600 mb-6">
+              Something went wrong with generating your collage
+            </p>
+            <Button
+              onClick={() => navigate("/")}
+              className="w-full bg-mono-900 hover:bg-mono-800 text-white"
+            >
+              <Home className="w-4 h-4 mr-2" />
+              Go Home
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100 p-4">
-      <h2 className="text-3xl font-bold mb-6">Print Preview</h2>
-
-      {/* Collage Preview */}
-      <div className="bg-white p-4 rounded-lg shadow-lg mb-6">
-        <h3 className="text-xl font-bold mb-4 text-center">Your Collage</h3>
-        {collagePreview && (
-          <img
-            src={collagePreview}
-            alt="Collage Preview"
-            className="max-w-md max-h-96 object-contain border rounded"
-          />
-        )}
+    <div className="h-screen mono-gradient flex flex-col overflow-hidden">
+      {/* Header */}
+      <div className="p-4 border-b border-mono-200 bg-white/50 backdrop-blur-sm flex-shrink-0">
+        <div className="max-w-4xl mx-auto text-center">
+          <h1 className="text-xl font-bold text-mono-900">Print Preview</h1>
+          <p className="text-xs text-mono-600">Review and print your collage</p>
+        </div>
       </div>
 
-      <div className="bg-white p-6 rounded-lg shadow-lg mb-6 max-w-md w-full">
-        <h3 className="text-xl font-bold mb-4">Print Details</h3>
-        <div className="mb-4">
-          <p>
-            <strong>File:</strong> {printFile.name}
-          </p>
-          <p>
-            <strong>Size:</strong> {Math.round(printFile.size / 1024)} KB
-          </p>
-          <p>
-            <strong>Type:</strong> {printFile.type}
-          </p>
-        </div>
+      {/* Main Content */}
+      <div className="flex-1 p-4 min-h-0">
+        <div className="max-w-4xl mx-auto h-full">
+          <div className="grid lg:grid-cols-2 gap-4 h-full">
+            {/* Preview Section */}
+            <Card className="glass-card">
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <CheckCircle className="w-4 h-4 text-green-600" />
+                  Your Collage
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-4 h-full flex flex-col">
+                <div className="flex-1 flex items-center justify-center mb-3">
+                  {collagePreview && (
+                    <img
+                      src={collagePreview}
+                      alt="Collage Preview"
+                      className="max-w-full max-h-full object-contain rounded-lg border border-mono-200 shadow-lg"
+                    />
+                  )}
+                </div>
+                <div className="space-y-1 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-mono-600">File:</span>
+                    <span className="font-medium text-mono-900 truncate ml-2">
+                      {printFile.name}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-mono-600">Size:</span>
+                    <span className="font-medium text-mono-900">
+                      {Math.round(printFile.size / 1024)} KB
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-mono-600">Type:</span>
+                    <Badge variant="secondary" className="text-xs">
+                      {printFile.type}
+                    </Badge>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
 
-        {availablePrinters.length > 0 && (
-          <div className="mb-4">
-            <label className="block text-sm font-bold mb-2">
-              Select Printer:
-            </label>
-            <select
-              value={selectedPrinter}
-              onChange={(e) => setSelectedPrinter(e.target.value)}
-              className="w-full p-2 border border-gray-300 rounded"
-            >
-              {availablePrinters.map((printer) => (
-                <option key={printer.name} value={printer.name}>
-                  {printer.displayName} {printer.isDefault ? "(Default)" : ""}
-                </option>
-              ))}
-            </select>
+            {/* Print Controls */}
+            <div className="flex flex-col gap-4 min-h-0">
+              {/* Printer Selection */}
+              <Card className="glass-card flex-1">
+                <CardHeader className="pb-2">
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <Printer className="w-4 h-4" />
+                    Print Settings
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-4 flex flex-col gap-3">
+                  {availablePrinters.length > 0 ? (
+                    <div>
+                      <label className="text-xs font-medium text-mono-700 mb-1 block">
+                        Select Printer:
+                      </label>
+                      <Select
+                        value={selectedPrinter}
+                        onValueChange={setSelectedPrinter}
+                      >
+                        <SelectTrigger className="h-8">
+                          <SelectValue placeholder="Choose a printer" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {availablePrinters.map((printer) => (
+                            <SelectItem key={printer.name} value={printer.name}>
+                              {printer.displayName}{" "}
+                              {printer.isDefault ? "(Default)" : ""}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  ) : (
+                    <div className="text-center py-3">
+                      <AlertCircle className="w-6 h-6 mx-auto mb-1 text-amber-500" />
+                      <p className="text-xs text-mono-600">
+                        No printers available
+                      </p>
+                    </div>
+                  )}
+
+                  {printStatus && (
+                    <div
+                      className={`p-2 rounded-lg text-xs ${
+                        printStatus.includes("failed") ||
+                        printStatus.includes("No")
+                          ? "bg-red-100 text-red-700 border border-red-200"
+                          : printStatus.includes("success")
+                          ? "bg-green-100 text-green-700 border border-green-200"
+                          : "bg-blue-100 text-blue-700 border border-blue-200"
+                      }`}
+                    >
+                      {printStatus}
+                    </div>
+                  )}
+
+                  <Button
+                    onClick={handlePrint}
+                    disabled={isPrinting || !selectedPrinter}
+                    className="w-full bg-mono-900 hover:bg-mono-800 text-white"
+                  >
+                    {isPrinting ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Printing...
+                      </>
+                    ) : (
+                      <>
+                        <Printer className="w-4 h-4 mr-2" />
+                        Print Now
+                      </>
+                    )}
+                  </Button>
+                </CardContent>
+              </Card>
+
+              {/* Digital Copies */}
+              <Card className="glass-card flex-shrink-0">
+                <CardHeader className="pb-2">
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <Download className="w-4 h-4" />
+                    Digital Copies
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-4">
+                  <p className="text-xs text-mono-600 mb-3">
+                    Get your photos delivered digitally to your email or phone
+                  </p>
+                  <Button
+                    onClick={() => setShowSoftCopiesDialog(true)}
+                    variant="outline"
+                    className="w-full"
+                  >
+                    <Download className="w-4 h-4 mr-2" />
+                    Get Soft Copies
+                  </Button>
+                </CardContent>
+              </Card>
+
+              {/* Done Button */}
+              <Button
+                onClick={handleDone}
+                size="lg"
+                className="w-full bg-green-700 hover:bg-green-800 text-white flex-shrink-0"
+              >
+                <CheckCircle className="w-4 h-4 mr-2" />
+                Complete Session
+              </Button>
+            </div>
           </div>
-        )}
-
-        {printStatus && (
-          <div
-            className={`mb-4 p-3 rounded ${
-              printStatus.includes("failed") || printStatus.includes("No")
-                ? "bg-red-100 text-red-700"
-                : printStatus.includes("success")
-                ? "bg-green-100 text-green-700"
-                : "bg-blue-100 text-blue-700"
-            }`}
-          >
-            {printStatus}
-          </div>
-        )}
-
-        <div className="flex gap-4">
-          <button
-            onClick={handlePrint}
-            disabled={isPrinting || !selectedPrinter}
-            className="flex-1 bg-green-500 hover:bg-green-700 disabled:bg-gray-400 text-white font-bold py-3 px-4 rounded"
-          >
-            {isPrinting ? "Printing..." : "Print Now"}
-          </button>
-          <button
-            onClick={() => setShowSoftCopiesDialog(true)}
-            className="flex-1 bg-blue-500 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded"
-          >
-            Get Soft Copies
-          </button>
         </div>
       </div>
 
       {/* Soft Copies Dialog */}
-      {showSoftCopiesDialog && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-lg shadow-lg max-w-md w-full mx-4">
-            <h3 className="text-xl font-bold mb-4">Get Soft Copies</h3>
-            <p className="mb-4 text-gray-600">
+      <Dialog
+        open={showSoftCopiesDialog}
+        onOpenChange={setShowSoftCopiesDialog}
+      >
+        <DialogContent className="glass-card border-0">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Download className="w-5 h-5" />
+              Get Soft Copies
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-mono-600">
               Save your photos to get digital copies delivered to your email or
               phone.
             </p>
 
             {softCopiesResult && (
               <div
-                className={`mb-4 p-3 rounded ${
+                className={`p-3 rounded-lg text-sm ${
                   softCopiesResult.includes("Failed")
-                    ? "bg-red-100 text-red-700"
-                    : "bg-green-100 text-green-700"
+                    ? "bg-red-100 text-red-700 border border-red-200"
+                    : "bg-green-100 text-green-700 border border-green-200"
                 }`}
               >
                 {softCopiesResult}
               </div>
             )}
 
-            <div className="flex gap-4">
-              <button
+            <div className="flex gap-3">
+              <Button
+                variant="outline"
                 onClick={() => setShowSoftCopiesDialog(false)}
-                className="flex-1 bg-gray-500 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded"
+                className="flex-1"
               >
                 Cancel
-              </button>
-              <button
+              </Button>
+              <Button
                 onClick={handleGetSoftCopies}
                 disabled={isSavingSoftCopies}
-                className="flex-1 bg-blue-500 hover:bg-blue-700 disabled:bg-gray-400 text-white font-bold py-2 px-4 rounded"
+                className="flex-1 bg-mono-900 hover:bg-mono-800 text-white"
               >
-                {isSavingSoftCopies ? "Saving..." : "Save Copies"}
-              </button>
+                {isSavingSoftCopies ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <Download className="w-4 h-4 mr-2" />
+                    Save Copies
+                  </>
+                )}
+              </Button>
             </div>
           </div>
-        </div>
-      )}
-
-      <button
-        onClick={handleDone}
-        className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-4 px-8 rounded-lg"
-      >
-        Done
-      </button>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
