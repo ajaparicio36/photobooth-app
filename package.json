@@ -10,8 +10,9 @@
     "preview": "vite preview",
     "electron:dev": "tsc --project tsconfig.electron.json && electron .",
     "electron:build": "bun run build && tsc --project tsconfig.electron.json && electron-builder",
-    "dev:app": "concurrently \"bun run dev\" \"bun run wait-and-electron\"",
-    "wait-and-electron": "wait-on http://localhost:5173 && bun run electron:dev",
+    "dev:electron": "concurrently \"npm run dev\" \"npm run electron:wait\"",
+    "electron:wait": "wait-on http://localhost:5173 && npm run electron:dev",
+    "start": "npm run dev:electron",
     "build:exe": "bun run build && tsc --project tsconfig.electron.json && electron-builder --win --publish=never",
     "dist": "bun run build:exe",
     "postinstall": "electron-builder install-app-deps"
@@ -90,6 +91,7 @@
     "react-dom": "^18.2.0",
     "react-hook-form": "^7.57.0",
     "react-router-dom": "^7.6.1",
+    "sharp": "^0.34.2",
     "sonner": "^2.0.5",
     "tailwind-merge": "^3.3.0",
     "zod": "^3.25.49"

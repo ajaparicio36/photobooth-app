@@ -1,6 +1,5 @@
-import sharp from "sharp";
+import * as sharp from "sharp";
 import * as fs from "fs";
-import * as path from "path";
 import { sharpPresets, FilterPreset } from "../presets/sharp.preset";
 import {
   SharpFilterOptions,
@@ -10,13 +9,8 @@ import {
   AvailableFilter,
 } from "../types/sharp.type";
 
-// Import image-to-pdf with error handling
-let imageToPdf: any = null;
-try {
-  imageToPdf = require("image-to-pdf");
-} catch (error) {
-  console.warn("image-to-pdf not available, PDF generation will be disabled");
-}
+// Import image-to-pdf with proper ES6 import
+import imageToPdf from "image-to-pdf";
 
 export class SharpManager {
   async applyFilter(
@@ -34,7 +28,7 @@ export class SharpManager {
         throw new Error(`Filter "${filterName}" not found`);
       }
 
-      let pipeline = sharp(inputPath);
+      let pipeline = sharp.default(inputPath);
 
       // Apply grayscale first if needed
       if (preset.grayscale) {
@@ -94,7 +88,7 @@ export class SharpManager {
         throw new Error("Input image file not found");
       }
 
-      let pipeline = sharp(inputPath);
+      let pipeline = sharp.default(inputPath);
 
       // Apply grayscale first if needed
       if (options.grayscale) {
@@ -210,7 +204,8 @@ export class SharpManager {
 
         const resizedImages = await Promise.all(
           uniqueImages.map(async (imgPath) => {
-            return await sharp(imgPath)
+            return await sharp
+              .default(imgPath)
               .resize(photoWidth, photoHeight, {
                 fit: "cover",
                 position: "center",
@@ -263,7 +258,8 @@ export class SharpManager {
 
         const resizedImages = await Promise.all(
           imagePaths.map(async (imgPath) => {
-            return await sharp(imgPath)
+            return await sharp
+              .default(imgPath)
               .resize(photoWidth, photoHeight, {
                 fit: "cover",
                 position: "center",
@@ -299,7 +295,8 @@ export class SharpManager {
 
       // Add logo if provided
       if (logoPath && fs.existsSync(logoPath)) {
-        const logoBuffer = await sharp(logoPath)
+        const logoBuffer = await sharp
+          .default(logoPath)
           .resize(logoSize, logoSize, { fit: "contain" })
           .toBuffer();
 
@@ -336,7 +333,7 @@ export class SharpManager {
       }
 
       // Build the collage with A6 dimensions
-      const collage = sharp({
+      const collage = sharp.default({
         create: {
           width: canvasWidth,
           height: canvasHeight,
@@ -360,17 +357,10 @@ export class SharpManager {
 
         try {
           const pdfBuffer = await new Promise<Buffer>((resolve, reject) => {
-            imageToPdf(
-              [jpegPath],
-              {
-                size: "A6",
-                orientation: "portrait",
-              },
-              (err: any, buffer: Buffer) => {
-                if (err) reject(err);
-                else resolve(buffer);
-              }
-            );
+            imageToPdf([jpegPath], (err: any, buffer: Buffer) => {
+              if (err) reject(err);
+              else resolve(buffer);
+            });
           });
 
           fs.writeFileSync(pdfPath, pdfBuffer);

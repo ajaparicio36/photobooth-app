@@ -35,10 +35,7 @@ const createWindow = (): void => {
     mainWindow.show();
   });
 
-  // Force development mode for now
-  const isDevMode = !app.isPackaged;
-
-  if (isDevMode) {
+  if (isDev) {
     console.log("Loading development server...");
     mainWindow.loadURL("http://localhost:5173").catch((err) => {
       console.error("Failed to load dev server:", err);
@@ -47,8 +44,8 @@ const createWindow = (): void => {
         <html>
           <body style="font-family: Arial; padding: 20px;">
             <h1>Development Server Not Running</h1>
-            <p>Please start the Vite dev server with: <code>bun run dev</code></p>
-            <p>Then restart Electron with: <code>bun run electron:dev</code></p>
+            <p>Please start the Vite dev server with: <code>npm run dev</code></p>
+            <p>Then restart Electron with: <code>npm run electron:dev</code></p>
             <p><strong>Make sure both commands are running in separate terminals!</strong></p>
           </body>
         </html>
