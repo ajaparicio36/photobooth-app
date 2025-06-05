@@ -13,6 +13,7 @@ const PhotoMode: React.FC = () => {
   );
   const [paperType, setPaperType] = useState<PaperType>(PaperType.FourBySix);
   const [photos, setPhotos] = useState<File[]>([]);
+  const [originalPhotos, setOriginalPhotos] = useState<File[]>([]);
   const [printFile, setPrintFile] = useState<File | null>(null);
 
   const renderCurrentView = () => {
@@ -28,7 +29,10 @@ const PhotoMode: React.FC = () => {
         return (
           <CapturePhotoScreen
             paperType={paperType}
-            setPhotos={setPhotos}
+            setPhotos={(newPhotos) => {
+              setPhotos(newPhotos);
+              setOriginalPhotos(newPhotos); // Save original photos
+            }}
             setCurrentPage={setCurrentPage}
           />
         );
@@ -44,8 +48,10 @@ const PhotoMode: React.FC = () => {
         return (
           <SelectFilterPage
             photos={photos}
+            originalPhotos={originalPhotos}
             setPhotos={setPhotos}
             setCurrentPage={setCurrentPage}
+            paperType={paperType}
           />
         );
       case PhotoModePage.OrganizeCollage:

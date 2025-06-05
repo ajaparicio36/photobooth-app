@@ -72,20 +72,20 @@ const SortablePhoto: React.FC<SortablePhotoProps> = ({
       {...attributes}
       {...listeners}
       className={`glass-card cursor-move transition-all duration-200 group ${
-        isDragging ? "shadow-2xl scale-105" : "hover:shadow-lg"
+        isDragging ? "shadow-lg scale-105" : "hover:shadow-md"
       }`}
     >
-      <CardContent className="p-4">
-        <div className="flex items-center justify-between mb-2">
-          <Badge variant="secondary" className="text-xs">
-            Photo {originalIndex + 1}
+      <CardContent className="p-2">
+        <div className="flex items-center justify-between mb-1">
+          <Badge variant="secondary" className="text-xs px-1 py-0">
+            {originalIndex + 1}
           </Badge>
-          <GripVertical className="w-4 h-4 text-mono-400 group-hover:text-mono-600" />
+          <GripVertical className="w-3 h-3 text-mono-400 group-hover:text-mono-600" />
         </div>
         <img
           src={previewUrl}
           alt={`Photo ${originalIndex + 1}`}
-          className="w-full aspect-square object-cover rounded-lg"
+          className="w-full aspect-square object-cover rounded"
         />
       </CardContent>
     </Card>
@@ -200,10 +200,11 @@ const OrganizeCollage: React.FC<OrganizeCollageProps> = ({
   return (
     <div className="h-screen mono-gradient flex flex-col overflow-hidden">
       {/* Header */}
-      <div className="p-4 border-b border-mono-200 bg-white/50 backdrop-blur-sm flex-shrink-0">
+      <div className="p-3 border-b border-mono-200 bg-white/50 backdrop-blur-sm flex-shrink-0">
         <div className="max-w-6xl mx-auto flex items-center justify-between">
           <Button
             variant="ghost"
+            size="sm"
             onClick={() => setCurrentPage(PhotoModePage.SelectFilterPage)}
             className="text-mono-700 hover:text-mono-900"
           >
@@ -211,7 +212,7 @@ const OrganizeCollage: React.FC<OrganizeCollageProps> = ({
             Back to Filters
           </Button>
           <div className="text-center">
-            <h1 className="text-xl font-bold text-mono-900">Organize Layout</h1>
+            <h1 className="text-lg font-bold text-mono-900">Organize Layout</h1>
             <div className="flex items-center justify-center gap-2 mt-1">
               <Badge variant="secondary" className="text-xs">
                 {paperType}
@@ -223,43 +224,39 @@ const OrganizeCollage: React.FC<OrganizeCollageProps> = ({
               )}
             </div>
           </div>
-          <div className="w-24"></div>
+          <div className="w-20"></div>
         </div>
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 p-4 min-h-0">
-        <div className="max-w-4xl mx-auto h-full">
-          <div className="grid lg:grid-cols-3 gap-4 h-full">
+      <div className="flex-1 p-3 overflow-auto">
+        <div className="max-w-5xl mx-auto">
+          <div className="grid lg:grid-cols-5 gap-3 h-full">
             {/* Instructions */}
-            <Card className="glass-card lg:col-span-3 flex-shrink-0">
-              <CardContent className="p-4 text-center">
-                <div className="flex items-center justify-center gap-2 mb-2">
+            <Card className="glass-card lg:col-span-5 flex-shrink-0">
+              <CardContent className="p-3 text-center">
+                <div className="flex items-center justify-center gap-2">
                   <Layout className="w-4 h-4 text-mono-700" />
-                  <h3 className="text-base font-bold text-mono-900">
+                  <h3 className="text-sm font-bold text-mono-900">
                     Arrange Your Photos
                   </h3>
+                  <span className="text-xs text-mono-500">
+                    Drag to reorder
+                    {is2x6Layout && " • Photos will be mirrored on right side"}
+                  </span>
                 </div>
-                <p className="text-mono-600 text-sm mb-1">
-                  Drag and drop photos to organize your collage layout
-                </p>
-                {is2x6Layout && (
-                  <p className="text-xs text-mono-500">
-                    Photos will be duplicated on the right side for 2×6 format
-                  </p>
-                )}
               </CardContent>
             </Card>
 
             {/* Photo Organization */}
-            <Card className="glass-card lg:col-span-2 min-h-0">
-              <CardHeader className="pb-2">
-                <CardTitle className="flex items-center gap-2 text-base">
+            <Card className="glass-card lg:col-span-3 overflow-hidden">
+              <CardHeader className="pb-2 px-3 pt-3">
+                <CardTitle className="flex items-center gap-2 text-sm">
                   <GripVertical className="w-4 h-4" />
                   Drag to Reorder
                 </CardTitle>
               </CardHeader>
-              <CardContent className="flex-1 min-h-0">
+              <CardContent className="px-3 pb-3 overflow-auto">
                 <DndContext
                   sensors={sensors}
                   collisionDetection={closestCenter}
@@ -270,10 +267,12 @@ const OrganizeCollage: React.FC<OrganizeCollageProps> = ({
                     strategy={verticalListSortingStrategy}
                   >
                     <div
-                      className={`grid gap-3 h-full ${
+                      className={`grid gap-2 ${
                         is2x6Layout
-                          ? "grid-cols-1 max-w-xs mx-auto"
-                          : "grid-cols-2 max-w-lg mx-auto"
+                          ? "grid-cols-2 max-w-xs mx-auto"
+                          : requiredPhotos === 4
+                          ? "grid-cols-2 max-w-sm mx-auto"
+                          : "grid-cols-3 max-w-md mx-auto"
                       }`}
                     >
                       {organizedPhotos
@@ -293,33 +292,31 @@ const OrganizeCollage: React.FC<OrganizeCollageProps> = ({
               </CardContent>
             </Card>
 
-            {/* 2x6 Layout Preview + Build Button */}
-            <div className="lg:col-span-1 flex flex-col gap-4">
+            {/* Preview and Build Section */}
+            <div className="lg:col-span-2 flex flex-col gap-3">
               {is2x6Layout && (
-                <Card className="glass-card flex-1">
-                  <CardContent className="p-4 h-full flex flex-col">
-                    <h4 className="font-bold text-mono-900 mb-3 text-center text-sm">
-                      Final Layout Preview (2×6)
-                    </h4>
-                    <div className="flex gap-2 flex-1">
+                <Card className="glass-card">
+                  <CardHeader className="pb-2 px-3 pt-3">
+                    <CardTitle className="text-sm text-center">
+                      Final Layout Preview
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="px-3 pb-3">
+                    <div className="flex gap-2">
                       <div className="flex-1 text-center">
-                        <div className="bg-white border-2 border-dashed border-mono-300 rounded-lg p-2 h-full flex flex-col justify-center">
+                        <div className="bg-white border border-dashed border-mono-300 rounded p-2 aspect-[2/3]">
                           <div className="text-xs font-medium text-mono-700 mb-1">
-                            Left Side
+                            Left
                           </div>
-                          <div className="text-xs text-mono-500">
-                            Your arrangement
-                          </div>
+                          <div className="text-xs text-mono-500">Original</div>
                         </div>
                       </div>
                       <div className="flex-1 text-center">
-                        <div className="bg-white border-2 border-dashed border-mono-300 rounded-lg p-2 h-full flex flex-col justify-center">
+                        <div className="bg-white border border-dashed border-mono-300 rounded p-2 aspect-[2/3]">
                           <div className="text-xs font-medium text-mono-700 mb-1">
-                            Right Side
+                            Right
                           </div>
-                          <div className="text-xs text-mono-500">
-                            Duplicate copy
-                          </div>
+                          <div className="text-xs text-mono-500">Mirror</div>
                         </div>
                       </div>
                     </div>
@@ -327,9 +324,9 @@ const OrganizeCollage: React.FC<OrganizeCollageProps> = ({
                 </Card>
               )}
 
-              {/* Build Collage Button */}
-              <Card className="glass-card flex-shrink-0">
-                <CardContent className="p-4 text-center">
+              {/* Build Button */}
+              <Card className="glass-card flex-1 flex flex-col justify-end">
+                <CardContent className="p-3">
                   <Button
                     onClick={buildCollage}
                     disabled={isBuilding}

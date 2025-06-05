@@ -1,4 +1,4 @@
-import { PhotoModePage } from "@/lib/enums";
+import { PhotoModePage, PaperType } from "@/lib/enums";
 import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -7,29 +7,31 @@ import { ArrowLeft, Palette, Loader2 } from "lucide-react";
 
 interface SelectFilterPageProps {
   photos: File[];
+  originalPhotos: File[];
   setPhotos: (photos: File[]) => void;
   setCurrentPage: (page: PhotoModePage) => void;
+  paperType: PaperType;
 }
 
 const SelectFilterPage: React.FC<SelectFilterPageProps> = ({
   photos,
+  originalPhotos,
   setPhotos,
   setCurrentPage,
+  paperType,
 }) => {
   const [availableFilters, setAvailableFilters] = useState<any[]>([]);
   const [selectedFilter, setSelectedFilter] = useState<string>("");
   const [isApplying, setIsApplying] = useState(false);
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
   const [previewUrl, setPreviewUrl] = useState<string>("");
+  const [selectedPreviewPhotoIndex, setSelectedPreviewPhotoIndex] =
+    useState<number>(0);
 
   useEffect(() => {
     loadFilters();
     createPreviewUrls();
   }, [photos]);
-
-  useEffect(() => {
-    generatePreview();
-  }, [selectedFilter, previewUrls]);
 
   const loadFilters = async () => {
     try {
@@ -41,7 +43,8 @@ const SelectFilterPage: React.FC<SelectFilterPageProps> = ({
   };
 
   const createPreviewUrls = () => {
-    const urls = photos.map((photo) => URL.createObjectURL(photo));
+    // Always use original photos for display
+    const urls = originalPhotos.map((photo) => URL.createObjectURL(photo));
     setPreviewUrls(urls);
   };
 
@@ -52,11 +55,25 @@ const SelectFilterPage: React.FC<SelectFilterPageProps> = ({
       if (!selectedFilter) {
         // No filter - create collage preview with original photos
         const imagePaths: string[] = [];
-        for (let i = 0; i < photos.length; i++) {
-          const tempPath = `/tmp/preview_original_${i}_${Date.now()}.jpg`;
-          const arrayBuffer = await photos[i].arrayBuffer();
-          await window.electronAPI.saveFile(arrayBuffer, tempPath);
-          imagePaths.push(tempPath);
+
+        if (paperType === PaperType.TwoBySix) {
+          // For 2x6, we need to prepare images for the layout
+          // Take the first 2 photos and duplicate them as needed
+          const photosToUse = originalPhotos.slice(0, 2);
+          for (let i = 0; i < photosToUse.length; i++) {
+            const tempPath = `/tmp/preview_original_${i}_${Date.now()}.jpg`;
+            const arrayBuffer = await photosToUse[i].arrayBuffer();
+            await window.electronAPI.saveFile(arrayBuffer, tempPath);
+            imagePaths.push(tempPath);
+          }
+        } else {
+          // For 4x6, use all original photos
+          for (let i = 0; i < originalPhotos.length; i++) {
+            const tempPath = `/tmp/preview_original_${i}_${Date.now()}.jpg`;
+            const arrayBuffer = await originalPhotos[i].arrayBuffer();
+            await window.electronAPI.saveFile(arrayBuffer, tempPath);
+            imagePaths.push(tempPath);
+          }
         }
 
         const outputPath = `/tmp/preview_collage_${Date.now()}.jpg`;
@@ -64,7 +81,7 @@ const SelectFilterPage: React.FC<SelectFilterPageProps> = ({
           imagePaths,
           outputPath,
           {
-            paperType: "4x6",
+            paperType: paperType === PaperType.TwoBySix ? "2x6" : "4x6",
             spacing: 10,
             backgroundColor: "#ffffff",
           }
@@ -75,11 +92,12 @@ const SelectFilterPage: React.FC<SelectFilterPageProps> = ({
         const url = URL.createObjectURL(blob);
         setPreviewUrl(url);
       } else {
-        // Apply filter to first photo for preview
+        // Apply filter to selected original photo for preview
+        const photoToPreview = originalPhotos[selectedPreviewPhotoIndex];
         const tempPath = `/tmp/preview_original_${Date.now()}.jpg`;
         const outputPath = `/tmp/preview_filtered_${Date.now()}.jpg`;
 
-        const arrayBuffer = await photos[0].arrayBuffer();
+        const arrayBuffer = await photoToPreview.arrayBuffer();
         await window.electronAPI.saveFile(arrayBuffer, tempPath);
 
         const filterResult = await window.electronAPI.applyImageFilter(
@@ -102,8 +120,14 @@ const SelectFilterPage: React.FC<SelectFilterPageProps> = ({
     }
   };
 
+  useEffect(() => {
+    generatePreview();
+  }, [selectedFilter, previewUrls, selectedPreviewPhotoIndex]);
+
   const applyFilterToPhotos = async () => {
     if (!selectedFilter) {
+      // No filter selected - use original photos
+      setPhotos(originalPhotos);
       setCurrentPage(PhotoModePage.OrganizeCollage);
       return;
     }
@@ -112,8 +136,8 @@ const SelectFilterPage: React.FC<SelectFilterPageProps> = ({
     try {
       const filteredPhotos: File[] = [];
 
-      for (let i = 0; i < photos.length; i++) {
-        const photo = photos[i];
+      for (let i = 0; i < originalPhotos.length; i++) {
+        const photo = originalPhotos[i];
         const tempPath = `/tmp/original_${i}_${Date.now()}.jpg`;
         const outputPath = `/tmp/filtered_${i}_${Date.now()}.jpg`;
 
@@ -149,6 +173,7 @@ const SelectFilterPage: React.FC<SelectFilterPageProps> = ({
     } catch (error) {
       console.error("Failed to apply filters:", error);
       // Continue with original photos if filter fails
+      setPhotos(originalPhotos);
       setCurrentPage(PhotoModePage.OrganizeCollage);
     } finally {
       setIsApplying(false);
@@ -268,17 +293,40 @@ const SelectFilterPage: React.FC<SelectFilterPageProps> = ({
               <Card className="glass-card flex-1 min-h-0">
                 <CardContent className="p-4 h-full flex flex-col">
                   <h3 className="text-base font-bold text-mono-900 mb-3">
-                    Your Photos
+                    Your Photos {selectedFilter && "(Click to preview filter)"}
                   </h3>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3 flex-1">
                     {previewUrls.map((url, index) => (
                       <div key={index} className="text-center">
-                        <img
-                          src={url}
-                          alt={`Photo ${index + 1}`}
-                          className="w-full aspect-square object-cover rounded-lg border border-mono-200 shadow-sm"
-                        />
-                        <Badge variant="outline" className="mt-1 text-xs">
+                        <button
+                          onClick={() => setSelectedPreviewPhotoIndex(index)}
+                          className={`w-full group ${
+                            selectedFilter &&
+                            selectedPreviewPhotoIndex === index
+                              ? "ring-2 ring-mono-900 ring-offset-2"
+                              : ""
+                          }`}
+                          disabled={!selectedFilter}
+                        >
+                          <img
+                            src={url}
+                            alt={`Photo ${index + 1}`}
+                            className={`w-full aspect-square object-cover rounded-lg border border-mono-200 shadow-sm transition-all ${
+                              selectedFilter
+                                ? "group-hover:shadow-md group-hover:border-mono-400 cursor-pointer"
+                                : ""
+                            }`}
+                          />
+                        </button>
+                        <Badge
+                          variant={
+                            selectedFilter &&
+                            selectedPreviewPhotoIndex === index
+                              ? "default"
+                              : "outline"
+                          }
+                          className="mt-1 text-xs"
+                        >
                           Photo {index + 1}
                         </Badge>
                       </div>

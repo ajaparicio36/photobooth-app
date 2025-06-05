@@ -336,11 +336,13 @@ export class SharpManager {
 
       // Handle different paper types
       const is2x6Layout = options.paperType === "2x6";
-      const expectedImageCount = is2x6Layout ? 4 : 4;
+      const expectedImageCount = is2x6Layout ? 2 : 4;
 
       if (imagePaths.length !== expectedImageCount) {
         throw new Error(
-          `Expected ${expectedImageCount} images for ${options.paperType} layout, got ${imagePaths.length}`
+          `Expected ${expectedImageCount} images for ${
+            options.paperType || "4x6"
+          } layout, got ${imagePaths.length}`
         );
       }
 
@@ -362,9 +364,7 @@ export class SharpManager {
 
       if (is2x6Layout) {
         // For 2x6: 2 photos side by side, each photo appears twice (4 total images)
-        // Use the first 2 unique images, place them side by side twice
-        const uniqueImages = imagePaths.slice(0, 2);
-
+        // Use the 2 provided images, place them side by side twice
         const availableWidth = (canvasWidth - spacing * 3) / 2;
         const availableHeight = (canvasHeight - spacing * 3 - logoSize) / 2;
 
@@ -382,7 +382,7 @@ export class SharpManager {
         photoHeight = Math.floor(photoHeight);
 
         const resizedImages = await Promise.all(
-          uniqueImages.map(async (imgPath) => {
+          imagePaths.map(async (imgPath) => {
             return await sharp(imgPath)
               .resize(photoWidth, photoHeight, {
                 fit: "cover",

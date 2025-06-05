@@ -56,7 +56,18 @@ export function registerSharpHandlers() {
     "build-collage",
     async (_, imagePaths: string[], outputPath: string, options: any) => {
       try {
-        return await sharpManager.buildCollage(imagePaths, outputPath, options);
+        const result = await sharpManager.buildCollage(
+          imagePaths,
+          outputPath,
+          options
+        );
+        // Return both JPEG and PDF paths for frontend use
+        return {
+          success: true,
+          jpegPath: result.jpegPath,
+          pdfPath: result.pdfPath,
+          previewPath: result.jpegPath, // Explicitly provide preview path
+        };
       } catch (error) {
         console.error("Failed to build collage:", error);
         throw error;

@@ -27,9 +27,13 @@ import {
 
 interface PrintQueueProps {
   printFile: File | null;
+  jpegPreviewPath?: string; // Add JPEG preview path prop
 }
 
-const PrintQueue: React.FC<PrintQueueProps> = ({ printFile }) => {
+const PrintQueue: React.FC<PrintQueueProps> = ({
+  printFile,
+  jpegPreviewPath,
+}) => {
   const [isPrinting, setIsPrinting] = useState(false);
   const [printStatus, setPrintStatus] = useState<string>("");
   const [availablePrinters, setAvailablePrinters] = useState<any[]>([]);
@@ -43,10 +47,16 @@ const PrintQueue: React.FC<PrintQueueProps> = ({ printFile }) => {
   useEffect(() => {
     loadPrinters();
     generateCollagePreview();
-  }, []);
+  }, [jpegPreviewPath, printFile]);
 
   const generateCollagePreview = () => {
-    if (printFile) {
+    // Prefer JPEG preview path over PDF file
+    if (jpegPreviewPath) {
+      // Convert file path to file:// URL for electron
+      const fileUrl = `file://${jpegPreviewPath.replace(/\\/g, "/")}`;
+      setCollagePreview(fileUrl);
+    } else if (printFile) {
+      // Fallback to blob URL for PDF (though this won't display properly)
       const url = URL.createObjectURL(printFile);
       setCollagePreview(url);
     }
@@ -152,6 +162,23 @@ const PrintQueue: React.FC<PrintQueueProps> = ({ printFile }) => {
     navigate("/done?message=Photo session completed successfully!");
   };
 
+  const getDisplayFileName = () => {
+    // Return a user-friendly name instead of technical filename
+    return "Photo Collage";
+  };
+
+  const getDisplayFileSize = () => {
+    if (printFile) {
+      return Math.round(printFile.size / 1024);
+    }
+    return "Unknown";
+  };
+
+  const getDisplayFileType = () => {
+    // Show user-friendly type
+    return "Print Ready";
+  };
+
   if (!printFile) {
     return (
       <div className="min-h-screen mono-gradient flex items-center justify-center p-6">
@@ -208,26 +235,38 @@ const PrintQueue: React.FC<PrintQueueProps> = ({ printFile }) => {
                       src={collagePreview}
                       alt="Collage Preview"
                       className="max-w-full max-h-full object-contain rounded-lg border border-mono-200 shadow-lg"
+                      onError={() => {
+                        console.error("Failed to load preview image");
+                        setCollagePreview("");
+                      }}
                     />
+                  )}
+                  {!collagePreview && (
+                    <div className="text-center py-8">
+                      <AlertCircle className="w-8 h-8 mx-auto mb-2 text-amber-500" />
+                      <p className="text-sm text-mono-600">
+                        Preview not available
+                      </p>
+                    </div>
                   )}
                 </div>
                 <div className="space-y-1 text-xs">
                   <div className="flex justify-between">
                     <span className="text-mono-600">File:</span>
-                    <span className="font-medium text-mono-900 truncate ml-2">
-                      {printFile.name}
+                    <span className="font-medium text-mono-900">
+                      {getDisplayFileName()}
                     </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-mono-600">Size:</span>
                     <span className="font-medium text-mono-900">
-                      {Math.round(printFile.size / 1024)} KB
+                      {getDisplayFileSize()} KB
                     </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-mono-600">Type:</span>
                     <Badge variant="secondary" className="text-xs">
-                      {printFile.type}
+                      {getDisplayFileType()}
                     </Badge>
                   </div>
                 </div>
