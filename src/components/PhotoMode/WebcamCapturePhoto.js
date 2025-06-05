@@ -10,7 +10,7 @@ import { useWebcam } from "@/hooks/useWebcam";
 import { useAudio } from "@/hooks/useAudio";
 import { usePhotoCapture } from "@/hooks/usePhotoCapture";
 const WebcamCapturePhoto = ({ setPhotos, setCurrentPage, paperType, }) => {
-    const requiredPhotos = PAPER_TYPE_PHOTO_COUNT[paperType];
+    const requiredPhotos = PAPER_TYPE_PHOTO_COUNT[paperType]; // This will be 2 for 2x6, 4 for 4x6
     const { videoRef, webcamReady, webcamError, isInitializing, isWebcamInitInProgress, resetWebcam, cleanup, } = useWebcam();
     const { playCountdownTick, playShutterSound } = useAudio();
     const { captureState, sessionStarted, countdown, capturedPhotos, currentPhotoPreview, canvasRef, photosArrayRef, countdownValueRef, setSessionStarted, setCountdownDisplay, setCaptureState, resetSession, capturePhoto, clearTimers, countdownTimerRef, } = usePhotoCapture(requiredPhotos);

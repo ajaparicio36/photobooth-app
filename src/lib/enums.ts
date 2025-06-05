@@ -20,6 +20,6 @@ export enum PaperType {
 }
 
 export const PAPER_TYPE_PHOTO_COUNT = {
-  [PaperType.TwoBySix]: 2,
+  [PaperType.TwoBySix]: 2, // Only need 2 unique photos, Sharp will duplicate them
   [PaperType.FourBySix]: 4,
 };

@@ -1,4 +1,4 @@
-import { PhotoModePage, PaperType } from "@/lib/enums";
+import { PhotoModePage, PaperType, PAPER_TYPE_PHOTO_COUNT } from "@/lib/enums";
 import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -48,6 +48,8 @@ const SelectFilterPage: React.FC<SelectFilterPageProps> = ({
     setPreviewUrls(urls);
   };
 
+  const requiredPhotos = PAPER_TYPE_PHOTO_COUNT[paperType];
+
   const generatePreview = async () => {
     if (previewUrls.length === 0) return;
 
@@ -55,25 +57,13 @@ const SelectFilterPage: React.FC<SelectFilterPageProps> = ({
       if (!selectedFilter) {
         // No filter - create collage preview with original photos
         const imagePaths: string[] = [];
+        const photosToUse = originalPhotos.slice(0, requiredPhotos);
 
-        if (paperType === PaperType.TwoBySix) {
-          // For 2x6, we need to prepare images for the layout
-          // Take the first 2 photos and duplicate them as needed
-          const photosToUse = originalPhotos.slice(0, 2);
-          for (let i = 0; i < photosToUse.length; i++) {
-            const tempPath = `/tmp/preview_original_${i}_${Date.now()}.jpg`;
-            const arrayBuffer = await photosToUse[i].arrayBuffer();
-            await window.electronAPI.saveFile(arrayBuffer, tempPath);
-            imagePaths.push(tempPath);
-          }
-        } else {
-          // For 4x6, use all original photos
-          for (let i = 0; i < originalPhotos.length; i++) {
-            const tempPath = `/tmp/preview_original_${i}_${Date.now()}.jpg`;
-            const arrayBuffer = await originalPhotos[i].arrayBuffer();
-            await window.electronAPI.saveFile(arrayBuffer, tempPath);
-            imagePaths.push(tempPath);
-          }
+        for (let i = 0; i < photosToUse.length; i++) {
+          const tempPath = `/tmp/preview_original_${i}_${Date.now()}.jpg`;
+          const arrayBuffer = await photosToUse[i].arrayBuffer();
+          await window.electronAPI.saveFile(arrayBuffer, tempPath);
+          imagePaths.push(tempPath);
         }
 
         const outputPath = `/tmp/preview_collage_${Date.now()}.jpg`;
@@ -126,8 +116,9 @@ const SelectFilterPage: React.FC<SelectFilterPageProps> = ({
 
   const applyFilterToPhotos = async () => {
     if (!selectedFilter) {
-      // No filter selected - use original photos
-      setPhotos(originalPhotos);
+      // No filter selected - use original photos (only required amount)
+      const photosToUse = originalPhotos.slice(0, requiredPhotos);
+      setPhotos(photosToUse);
       setCurrentPage(PhotoModePage.OrganizeCollage);
       return;
     }
@@ -135,9 +126,10 @@ const SelectFilterPage: React.FC<SelectFilterPageProps> = ({
     setIsApplying(true);
     try {
       const filteredPhotos: File[] = [];
+      const photosToProcess = originalPhotos.slice(0, requiredPhotos);
 
-      for (let i = 0; i < originalPhotos.length; i++) {
-        const photo = originalPhotos[i];
+      for (let i = 0; i < photosToProcess.length; i++) {
+        const photo = photosToProcess[i];
         const tempPath = `/tmp/original_${i}_${Date.now()}.jpg`;
         const outputPath = `/tmp/filtered_${i}_${Date.now()}.jpg`;
 
@@ -173,7 +165,8 @@ const SelectFilterPage: React.FC<SelectFilterPageProps> = ({
     } catch (error) {
       console.error("Failed to apply filters:", error);
       // Continue with original photos if filter fails
-      setPhotos(originalPhotos);
+      const photosToUse = originalPhotos.slice(0, requiredPhotos);
+      setPhotos(photosToUse);
       setCurrentPage(PhotoModePage.OrganizeCollage);
     } finally {
       setIsApplying(false);
@@ -295,8 +288,14 @@ const SelectFilterPage: React.FC<SelectFilterPageProps> = ({
                   <h3 className="text-base font-bold text-mono-900 mb-3">
                     Your Photos {selectedFilter && "(Click to preview filter)"}
                   </h3>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 flex-1">
-                    {previewUrls.map((url, index) => (
+                  <div
+                    className={`grid gap-3 flex-1 ${
+                      requiredPhotos === 2
+                        ? "grid-cols-2"
+                        : "grid-cols-2 md:grid-cols-4"
+                    }`}
+                  >
+                    {previewUrls.slice(0, requiredPhotos).map((url, index) => (
                       <div key={index} className="text-center">
                         <button
                           onClick={() => setSelectedPreviewPhotoIndex(index)}

@@ -334,9 +334,9 @@ export class SharpManager {
         }
       }
 
-      // Handle different paper types
+      // Handle different paper types with correct image counts
       const is2x6Layout = options.paperType === "2x6";
-      const expectedImageCount = is2x6Layout ? 2 : 4;
+      const expectedImageCount = is2x6Layout ? 2 : 4; // 2x6 needs 2 unique images, 4x6 needs 4
 
       if (imagePaths.length !== expectedImageCount) {
         throw new Error(
@@ -363,12 +363,14 @@ export class SharpManager {
       let composition: any[];
 
       if (is2x6Layout) {
-        // For 2x6: 2 photos side by side, each photo appears twice (4 total images)
-        // Use the 2 provided images, place them side by side twice
+        // For 2x6: 2 photos arranged vertically on left, then mirrored on right
+        // Layout: [Photo1] [Photo1]
+        //        [Photo2] [Photo2]
         const availableWidth = (canvasWidth - spacing * 3) / 2;
         const availableHeight = (canvasHeight - spacing * 3 - logoSize) / 2;
 
-        const targetAspectRatio = 3 / 2;
+        // For 2x6, photos should be more vertical (portrait orientation)
+        const targetAspectRatio = 2 / 3; // Height to width ratio (more vertical)
 
         if (availableWidth / availableHeight > targetAspectRatio) {
           photoHeight = availableHeight;
@@ -392,28 +394,29 @@ export class SharpManager {
           })
         );
 
-        const startX = Math.floor(
-          (canvasWidth - (photoWidth * 2 + spacing)) / 2
-        );
-        const topRowY = Math.floor(
-          (canvasHeight - (photoHeight * 2 + spacing) - logoSize) / 4
-        );
-        const bottomRowY = topRowY + photoHeight + spacing;
+        const gridWidth = photoWidth * 2 + spacing;
+        const gridHeight = photoHeight * 2 + spacing;
+        const startX = Math.floor((canvasWidth - gridWidth) / 2);
+        const startY = Math.floor((canvasHeight - gridHeight - logoSize) / 2);
 
         composition = [
-          // Top row
-          { input: resizedImages[0], left: startX, top: topRowY },
+          // Left column: Photo1 top, Photo2 bottom
+          { input: resizedImages[0], left: startX, top: startY },
           {
             input: resizedImages[1],
-            left: startX + photoWidth + spacing,
-            top: topRowY,
+            left: startX,
+            top: startY + photoHeight + spacing,
           },
-          // Bottom row (duplicate)
-          { input: resizedImages[0], left: startX, top: bottomRowY },
+          // Right column: Photo1 top, Photo2 bottom (mirrored)
+          {
+            input: resizedImages[0],
+            left: startX + photoWidth + spacing,
+            top: startY,
+          },
           {
             input: resizedImages[1],
             left: startX + photoWidth + spacing,
-            top: bottomRowY,
+            top: startY + photoHeight + spacing,
           },
         ];
       } else {

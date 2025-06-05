@@ -20,7 +20,7 @@ const WebcamCapturePhoto: React.FC<WebcamCapturePhotoProps> = ({
   setCurrentPage,
   paperType,
 }) => {
-  const requiredPhotos = PAPER_TYPE_PHOTO_COUNT[paperType];
+  const requiredPhotos = PAPER_TYPE_PHOTO_COUNT[paperType]; // This will be 2 for 2x6, 4 for 4x6
 
   const {
     videoRef,

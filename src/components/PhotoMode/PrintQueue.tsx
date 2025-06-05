@@ -49,16 +49,38 @@ const PrintQueue: React.FC<PrintQueueProps> = ({
     generateCollagePreview();
   }, [jpegPreviewPath, printFile]);
 
-  const generateCollagePreview = () => {
-    // Prefer JPEG preview path over PDF file
+  const generateCollagePreview = async () => {
+    // Try multiple approaches to load the preview
     if (jpegPreviewPath) {
-      // Convert file path to file:// URL for electron
-      const fileUrl = `file://${jpegPreviewPath.replace(/\\/g, "/")}`;
-      setCollagePreview(fileUrl);
-    } else if (printFile) {
-      // Fallback to blob URL for PDF (though this won't display properly)
+      try {
+        // First, try to read the file and create a blob URL
+        const fileData = await window.electronAPI.readFile(jpegPreviewPath);
+        const blob = new Blob([fileData], { type: "image/jpeg" });
+        const url = URL.createObjectURL(blob);
+        setCollagePreview(url);
+        console.log("Successfully loaded JPEG preview from file data");
+        return;
+      } catch (error) {
+        console.warn("Failed to load JPEG preview from file data:", error);
+      }
+
+      try {
+        // Fallback: try file:// URL (normalize path separators)
+        const normalizedPath = jpegPreviewPath.replace(/\\/g, "/");
+        const fileUrl = `file://${normalizedPath}`;
+        setCollagePreview(fileUrl);
+        console.log("Using file URL for preview:", fileUrl);
+        return;
+      } catch (error) {
+        console.warn("Failed to create file URL:", error);
+      }
+    }
+
+    // Final fallback: use the print file blob
+    if (printFile) {
       const url = URL.createObjectURL(printFile);
       setCollagePreview(url);
+      console.log("Using print file blob as fallback");
     }
   };
 
@@ -230,23 +252,33 @@ const PrintQueue: React.FC<PrintQueueProps> = ({
               </CardHeader>
               <CardContent className="p-4 h-full flex flex-col">
                 <div className="flex-1 flex items-center justify-center mb-3">
-                  {collagePreview && (
+                  {collagePreview ? (
                     <img
                       src={collagePreview}
                       alt="Collage Preview"
                       className="max-w-full max-h-full object-contain rounded-lg border border-mono-200 shadow-lg"
-                      onError={() => {
-                        console.error("Failed to load preview image");
+                      onLoad={() => {
+                        console.log("Preview image loaded successfully");
+                      }}
+                      onError={(e) => {
+                        console.error("Failed to load preview image:", e);
+                        console.log("Preview URL was:", collagePreview);
                         setCollagePreview("");
                       }}
                     />
-                  )}
-                  {!collagePreview && (
+                  ) : (
                     <div className="text-center py-8">
-                      <AlertCircle className="w-8 h-8 mx-auto mb-2 text-amber-500" />
-                      <p className="text-sm text-mono-600">
-                        Preview not available
+                      <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-mono-100 flex items-center justify-center">
+                        <Loader2 className="w-8 h-8 text-mono-600 animate-spin" />
+                      </div>
+                      <p className="text-sm text-mono-600 mb-2">
+                        Loading preview...
                       </p>
+                      {jpegPreviewPath && (
+                        <p className="text-xs text-mono-400">
+                          Path: {jpegPreviewPath}
+                        </p>
+                      )}
                     </div>
                   )}
                 </div>

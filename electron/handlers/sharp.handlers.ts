@@ -56,11 +56,23 @@ export function registerSharpHandlers() {
     "build-collage",
     async (_, imagePaths: string[], outputPath: string, options: any) => {
       try {
+        console.log("Building collage with paths:", imagePaths);
+        console.log("Output path:", outputPath);
+        console.log("Options:", options);
+
         const result = await sharpManager.buildCollage(
           imagePaths,
           outputPath,
           options
         );
+
+        console.log("Collage build result:", result);
+
+        // Ensure paths exist and are accessible
+        if (result.jpegPath && !require("fs").existsSync(result.jpegPath)) {
+          console.error("JPEG file does not exist:", result.jpegPath);
+        }
+
         // Return both JPEG and PDF paths for frontend use
         return {
           success: true,

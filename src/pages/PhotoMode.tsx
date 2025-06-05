@@ -1,7 +1,6 @@
 import CapturePhotoScreen from "@/components/PhotoMode/CapturePhotoScreen";
 import ChoosePaperType from "@/components/PhotoMode/ChoosePaperType";
 import OrganizeCollage from "@/components/PhotoMode/OrganizeCollage";
-import PhotoPreview from "@/components/PhotoMode/PhotoPreview";
 import PrintQueue from "@/components/PhotoMode/PrintQueue";
 import SelectFilterPage from "@/components/PhotoMode/SelectFilterPage";
 import { PaperType, PhotoModePage } from "@/lib/enums";
@@ -15,6 +14,7 @@ const PhotoMode: React.FC = () => {
   const [photos, setPhotos] = useState<File[]>([]);
   const [originalPhotos, setOriginalPhotos] = useState<File[]>([]);
   const [printFile, setPrintFile] = useState<File | null>(null);
+  const [jpegPreviewPath, setJpegPreviewPath] = useState<string>("");
 
   const renderCurrentView = () => {
     switch (currentPage) {
@@ -36,14 +36,6 @@ const PhotoMode: React.FC = () => {
             setCurrentPage={setCurrentPage}
           />
         );
-      case PhotoModePage.PhotoPreview:
-        return (
-          <PhotoPreview
-            paperType={paperType}
-            photos={photos}
-            setCurrentPage={setCurrentPage}
-          />
-        );
       case PhotoModePage.SelectFilterPage:
         return (
           <SelectFilterPage
@@ -61,10 +53,13 @@ const PhotoMode: React.FC = () => {
             photos={photos}
             setCurrentPage={setCurrentPage}
             setPrintFile={setPrintFile}
+            setJpegPreviewPath={setJpegPreviewPath}
           />
         );
       case PhotoModePage.PrintQueue:
-        return <PrintQueue printFile={printFile} />;
+        return (
+          <PrintQueue printFile={printFile} jpegPreviewPath={jpegPreviewPath} />
+        );
 
       default:
         return (

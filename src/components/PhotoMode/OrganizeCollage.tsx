@@ -26,6 +26,7 @@ interface OrganizeCollageProps {
   photos: File[];
   setCurrentPage: (page: PhotoModePage) => void;
   setPrintFile: (file: File | null) => void;
+  setJpegPreviewPath: (path: string) => void;
   paperType: PaperType;
 }
 
@@ -96,6 +97,7 @@ const OrganizeCollage: React.FC<OrganizeCollageProps> = ({
   photos,
   setCurrentPage,
   setPrintFile,
+  setJpegPreviewPath,
   paperType,
 }) => {
   const [organizedPhotos, setOrganizedPhotos] = useState(photos);
@@ -113,9 +115,11 @@ const OrganizeCollage: React.FC<OrganizeCollageProps> = ({
   const is2x6Layout = paperType === PaperType.TwoBySix;
 
   useEffect(() => {
-    setOrganizedPhotos(photos);
-    setOriginalIndices(photos.map((_, index) => index));
-  }, [photos]);
+    // Only use the required number of photos
+    const photosToUse = photos.slice(0, requiredPhotos);
+    setOrganizedPhotos(photosToUse);
+    setOriginalIndices(photosToUse.map((_, index) => index));
+  }, [photos, requiredPhotos]);
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
@@ -148,20 +152,17 @@ const OrganizeCollage: React.FC<OrganizeCollageProps> = ({
   const buildCollage = async () => {
     setIsBuilding(true);
     try {
+      // Only use the required number of photos
+      const photosToUse = organizedPhotos.slice(0, requiredPhotos);
+
       // Save photos to temp files
       const imagePaths: string[] = [];
-      for (let i = 0; i < organizedPhotos.length; i++) {
-        const photo = organizedPhotos[i];
+      for (let i = 0; i < photosToUse.length; i++) {
+        const photo = photosToUse[i];
         const tempPath = `/tmp/collage_photo_${i}_${Date.now()}.jpg`;
         const arrayBuffer = await photo.arrayBuffer();
         await window.electronAPI.saveFile(arrayBuffer, tempPath);
         imagePaths.push(tempPath);
-      }
-
-      // For 2x6, duplicate photos for left and right side
-      let finalImagePaths = imagePaths;
-      if (is2x6Layout) {
-        finalImagePaths = [...imagePaths, ...imagePaths];
       }
 
       const outputPath = `/tmp/collage_${Date.now()}.jpg`;
@@ -172,10 +173,13 @@ const OrganizeCollage: React.FC<OrganizeCollageProps> = ({
       };
 
       const result = await window.electronAPI.buildCollage(
-        finalImagePaths,
+        imagePaths,
         outputPath,
         collageOptions
       );
+
+      // Set the JPEG preview path for the PrintQueue component
+      setJpegPreviewPath(result.jpegPath);
 
       // Read the PDF file if available, otherwise use JPEG
       let printFilePath = result.pdfPath || result.jpegPath;
@@ -219,7 +223,7 @@ const OrganizeCollage: React.FC<OrganizeCollageProps> = ({
               </Badge>
               {is2x6Layout && (
                 <Badge variant="outline" className="text-xs">
-                  Mirror Layout
+                  Vertical Mirror Layout
                 </Badge>
               )}
             </div>
@@ -242,7 +246,8 @@ const OrganizeCollage: React.FC<OrganizeCollageProps> = ({
                   </h3>
                   <span className="text-xs text-mono-500">
                     Drag to reorder
-                    {is2x6Layout && " • Photos will be mirrored on right side"}
+                    {is2x6Layout &&
+                      " • Photos will be arranged vertically and mirrored horizontally"}
                   </span>
                 </div>
               </CardContent>
@@ -263,13 +268,15 @@ const OrganizeCollage: React.FC<OrganizeCollageProps> = ({
                   onDragEnd={handleDragEnd}
                 >
                   <SortableContext
-                    items={organizedPhotos.map((_, index) => `photo-${index}`)}
+                    items={organizedPhotos
+                      .slice(0, requiredPhotos)
+                      .map((_, index) => `photo-${index}`)}
                     strategy={verticalListSortingStrategy}
                   >
                     <div
                       className={`grid gap-2 ${
                         is2x6Layout
-                          ? "grid-cols-2 max-w-xs mx-auto"
+                          ? "grid-cols-1 max-w-xs mx-auto" // Vertical arrangement for 2x6
                           : requiredPhotos === 4
                           ? "grid-cols-2 max-w-sm mx-auto"
                           : "grid-cols-3 max-w-md mx-auto"
@@ -306,17 +313,27 @@ const OrganizeCollage: React.FC<OrganizeCollageProps> = ({
                       <div className="flex-1 text-center">
                         <div className="bg-white border border-dashed border-mono-300 rounded p-2 aspect-[2/3]">
                           <div className="text-xs font-medium text-mono-700 mb-1">
-                            Left
+                            Left Side
                           </div>
-                          <div className="text-xs text-mono-500">Original</div>
+                          <div className="text-xs text-mono-500">Photo 1</div>
+                          <div className="text-xs text-mono-500 mt-1">
+                            Photo 2
+                          </div>
+                          <div className="text-xs text-mono-400">
+                            (Original)
+                          </div>
                         </div>
                       </div>
                       <div className="flex-1 text-center">
                         <div className="bg-white border border-dashed border-mono-300 rounded p-2 aspect-[2/3]">
                           <div className="text-xs font-medium text-mono-700 mb-1">
-                            Right
+                            Right Side
                           </div>
-                          <div className="text-xs text-mono-500">Mirror</div>
+                          <div className="text-xs text-mono-500">Photo 1</div>
+                          <div className="text-xs text-mono-500 mt-1">
+                            Photo 2
+                          </div>
+                          <div className="text-xs text-mono-400">(Mirror)</div>
                         </div>
                       </div>
                     </div>
