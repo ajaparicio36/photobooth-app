@@ -309,31 +309,47 @@ const OrganizeCollage: React.FC<OrganizeCollageProps> = ({
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="px-3 pb-3">
-                    <div className="flex gap-2">
-                      <div className="flex-1 text-center">
-                        <div className="bg-white border border-dashed border-mono-300 rounded p-2 aspect-[2/3]">
-                          <div className="text-xs font-medium text-mono-700 mb-1">
-                            Left Side
+                    <div className="space-y-2">
+                      <div className="flex gap-4">
+                        <div className="flex-1 text-center">
+                          <div className="bg-white border border-dashed border-mono-300 rounded p-2 aspect-[3/4]">
+                            <div className="text-xs font-medium text-mono-700 mb-1">
+                              Left Side
+                            </div>
+                            <div className="text-xs text-mono-500">Photo 1</div>
+                            <div className="text-xs text-mono-500 mt-1">
+                              Photo 2
+                            </div>
+                            <div className="text-xs text-mono-400">
+                              (Original)
+                            </div>
                           </div>
-                          <div className="text-xs text-mono-500">Photo 1</div>
-                          <div className="text-xs text-mono-500 mt-1">
-                            Photo 2
-                          </div>
-                          <div className="text-xs text-mono-400">
-                            (Original)
+                        </div>
+                        <div className="flex-1 text-center">
+                          <div className="bg-white border border-dashed border-mono-300 rounded p-2 aspect-[3/4]">
+                            <div className="text-xs font-medium text-mono-700 mb-1">
+                              Right Side
+                            </div>
+                            <div className="text-xs text-mono-500">Photo 1</div>
+                            <div className="text-xs text-mono-500 mt-1">
+                              Photo 2
+                            </div>
+                            <div className="text-xs text-mono-400">
+                              (Mirror)
+                            </div>
                           </div>
                         </div>
                       </div>
-                      <div className="flex-1 text-center">
-                        <div className="bg-white border border-dashed border-mono-300 rounded p-2 aspect-[2/3]">
-                          <div className="text-xs font-medium text-mono-700 mb-1">
-                            Right Side
+                      <div className="flex gap-4">
+                        <div className="flex-1 text-center">
+                          <div className="bg-mono-50 border border-dashed border-mono-300 rounded p-1">
+                            <div className="text-xs text-mono-600">🏷️ Logo</div>
                           </div>
-                          <div className="text-xs text-mono-500">Photo 1</div>
-                          <div className="text-xs text-mono-500 mt-1">
-                            Photo 2
+                        </div>
+                        <div className="flex-1 text-center">
+                          <div className="bg-mono-50 border border-dashed border-mono-300 rounded p-1">
+                            <div className="text-xs text-mono-600">🏷️ Logo</div>
                           </div>
-                          <div className="text-xs text-mono-400">(Mirror)</div>
                         </div>
                       </div>
                     </div>

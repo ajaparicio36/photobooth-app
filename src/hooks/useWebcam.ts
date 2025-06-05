@@ -67,8 +67,9 @@ export const useWebcam = () => {
 
       const constraints = {
         video: {
-          width: { ideal: 640, max: 1280 },
-          height: { ideal: 480, max: 720 },
+          width: { ideal: 480, max: 960 }, // 3:4 aspect ratio
+          height: { ideal: 640, max: 1280 }, // 3:4 aspect ratio
+          aspectRatio: { ideal: 0.75 }, // 3:4 ratio (width/height)
         },
       };
 

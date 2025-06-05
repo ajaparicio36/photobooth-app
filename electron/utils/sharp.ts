@@ -347,38 +347,71 @@ export class SharpManager {
       }
 
       const {
-        spacing = 10,
+        spacing = 20, // Further reduced horizontal spacing from 40 to 20
         backgroundColor = "#ffffff",
-        logoPath,
-        logoPosition = "bottom-center",
-        logoSize = 60,
+        logoSize = 360, // Keep the large logo size
       } = options;
+
+      // Keep vertical spacing separate from logo positioning
+      const verticalSpacing = Math.floor(spacing * 10); // 600px when spacing is 20px (increased for better separation)
 
       // A6 dimensions: 105mm x 148mm at 300 DPI = 1240px x 1748px
       const canvasWidth = 1200;
       const canvasHeight = 1700;
 
+      // Resolve logo path - check multiple possible locations
+      let logoPath = "";
+      const possibleLogoPaths = [
+        path.join(process.resourcesPath, "app", "public", "logo", "logo.png"),
+        path.join(process.resourcesPath, "public", "logo", "logo.png"),
+        path.join(__dirname, "..", "..", "public", "logo", "logo.png"),
+        path.join(__dirname, "..", "..", "..", "public", "logo", "logo.png"),
+        path.join(process.cwd(), "public", "logo", "logo.png"),
+      ];
+
+      for (const possiblePath of possibleLogoPaths) {
+        if (fs.existsSync(possiblePath)) {
+          logoPath = possiblePath;
+          console.log("Logo found at:", logoPath);
+          break;
+        }
+      }
+
+      if (!logoPath) {
+        console.warn(
+          "Logo not found at any expected location. Proceeding without logo."
+        );
+      }
+
       let photoWidth: number;
       let photoHeight: number;
       let composition: any[];
 
+      // Reserve fixed space for logo at bottom - don't let vertical spacing affect this
+      const logoSpaceHeight = logoPath ? logoSize + 20 : 20; // Reduced from 40 to 20
+      const availableCanvasHeight = canvasHeight - logoSpaceHeight;
+
       if (is2x6Layout) {
         // For 2x6: 2 photos arranged vertically on left, then mirrored on right
-        // Layout: [Photo1] [Photo1]
-        //        [Photo2] [Photo2]
-        const availableWidth = (canvasWidth - spacing * 3) / 2;
-        const availableHeight = (canvasHeight - spacing * 3 - logoSize) / 2;
+        // Split canvas into two halves with horizontal spacing in between
+        const halfCanvasWidth = Math.floor((canvasWidth - spacing) / 2); // Split with spacing in middle
 
-        // For 2x6, photos should be more vertical (portrait orientation)
-        const targetAspectRatio = 2 / 3; // Height to width ratio (more vertical)
+        // Each half gets its own photo column with minimal margins
+        const photoColumnWidth = halfCanvasWidth - spacing / 2; // Reduced margin for each column
+        const photoColumnHeight = availableCanvasHeight - 60; // Fixed top and bottom margins
 
-        if (availableWidth / availableHeight > targetAspectRatio) {
-          photoHeight = availableHeight;
-          photoWidth = photoHeight * targetAspectRatio;
-        } else {
-          photoWidth = availableWidth;
-          photoHeight = photoWidth / targetAspectRatio;
-        }
+        // Calculate photo dimensions with 3:4 aspect ratio, making them larger
+        const targetAspectRatio = 3 / 4; // width/height
+
+        // Calculate max photo height considering the vertical spacing between photos
+        const maxPhotoHeight = (photoColumnHeight - verticalSpacing) / 2; // Two photos with gap between
+
+        // Make photos even bigger - use full available space
+        photoWidth = Math.min(
+          photoColumnWidth, // Use full column width
+          maxPhotoHeight * targetAspectRatio
+        );
+        photoHeight = photoWidth / targetAspectRatio;
 
         photoWidth = Math.floor(photoWidth);
         photoHeight = Math.floor(photoHeight);
@@ -394,45 +427,102 @@ export class SharpManager {
           })
         );
 
-        const gridWidth = photoWidth * 2 + spacing;
-        const gridHeight = photoHeight * 2 + spacing;
-        const startX = Math.floor((canvasWidth - gridWidth) / 2);
-        const startY = Math.floor((canvasHeight - gridHeight - logoSize) / 2);
+        // Calculate positions for left and right columns - ensure integers
+        const leftColumnX = Math.floor(
+          spacing / 4 + (halfCanvasWidth - photoWidth) / 2
+        );
+        const rightColumnX = Math.floor(
+          halfCanvasWidth + spacing / 4 + (halfCanvasWidth - photoWidth) / 2
+        );
+
+        // Start photos from top with proper margin - don't position too close to top
+        const topMargin = 80; // Increased top margin to move photos away from top border
+        const totalPhotoHeight = photoHeight * 2 + verticalSpacing;
+        const startY = Math.floor(topMargin);
 
         composition = [
           // Left column: Photo1 top, Photo2 bottom
-          { input: resizedImages[0], left: startX, top: startY },
+          { input: resizedImages[0], left: leftColumnX, top: startY },
           {
             input: resizedImages[1],
-            left: startX,
-            top: startY + photoHeight + spacing,
+            left: leftColumnX,
+            top: startY + photoHeight + verticalSpacing, // Add proper vertical spacing
           },
           // Right column: Photo1 top, Photo2 bottom (mirrored)
           {
             input: resizedImages[0],
-            left: startX + photoWidth + spacing,
+            left: rightColumnX,
             top: startY,
           },
           {
             input: resizedImages[1],
-            left: startX + photoWidth + spacing,
-            top: startY + photoHeight + spacing,
+            left: rightColumnX,
+            top: startY + photoHeight + verticalSpacing, // Add proper vertical spacing
           },
         ];
-      } else {
-        // For 4x6: 2x2 grid of 4 different photos
-        const availableWidth = (canvasWidth - spacing * 3) / 2;
-        const availableHeight = (canvasHeight - spacing * 4 - logoSize) / 2;
 
-        const targetAspectRatio = 3 / 2;
+        // Add TWO logos for 2x6 layout - one under each column (independent of vertical spacing)
+        if (logoPath && fs.existsSync(logoPath)) {
+          try {
+            const logoBuffer = await sharp(logoPath)
+              .resize(logoSize, logoSize, {
+                fit: "contain",
+                background: { r: 255, g: 255, b: 255, alpha: 0 },
+              })
+              .toBuffer();
 
-        if (availableWidth / availableHeight > targetAspectRatio) {
-          photoHeight = availableHeight;
-          photoWidth = photoHeight * targetAspectRatio;
-        } else {
-          photoWidth = availableWidth;
-          photoHeight = photoWidth / targetAspectRatio;
+            // Left logo position - ensure integers, fixed distance from bottom
+            const leftLogoX = Math.floor(
+              spacing / 4 + (halfCanvasWidth - logoSize) / 2
+            );
+            const logoY = Math.floor(canvasHeight - logoSize - 10); // Reduced from 20 to 10
+
+            // Right logo position - ensure integers
+            const rightLogoX = Math.floor(
+              halfCanvasWidth + spacing / 4 + (halfCanvasWidth - logoSize) / 2
+            );
+
+            composition.push(
+              {
+                input: logoBuffer,
+                left: leftLogoX,
+                top: logoY,
+              },
+              {
+                input: logoBuffer,
+                left: rightLogoX,
+                top: logoY,
+              }
+            );
+
+            console.log(
+              `Two logos added to 2x6 collage at positions: (${leftLogoX}, ${logoY}) and (${rightLogoX}, ${logoY}) with size: ${logoSize}px`
+            );
+          } catch (logoError) {
+            console.warn("Failed to process logo:", logoError);
+          }
         }
+      } else {
+        // For 4x6: 2x2 grid arranged in columns like 2x6 layout
+        // Split canvas into two halves with horizontal spacing in between
+        const halfCanvasWidth = Math.floor((canvasWidth - spacing) / 2); // Split with spacing in middle
+
+        // Each half gets its own photo column with minimal margins
+        const photoColumnWidth = halfCanvasWidth - spacing / 2; // Reduced margin for each column
+        const photoColumnHeight = availableCanvasHeight - 60; // Fixed top and bottom margins
+
+        // Calculate photo dimensions with 3:4 aspect ratio, making them larger
+        const targetAspectRatio = 3 / 4; // width/height
+
+        // Calculate max photo height considering the vertical spacing between photos
+        const maxPhotoHeight = (photoColumnHeight - verticalSpacing) / 2; // Two photos with gap between
+
+        // Make photos even bigger - use full available space
+        photoWidth = Math.min(
+          photoColumnWidth, // Use full column width
+          maxPhotoHeight * targetAspectRatio
+        );
+        photoHeight = photoWidth / targetAspectRatio;
 
         photoWidth = Math.floor(photoWidth);
         photoHeight = Math.floor(photoHeight);
@@ -448,67 +538,65 @@ export class SharpManager {
           })
         );
 
-        const gridWidth = photoWidth * 2 + spacing;
-        const gridHeight = photoHeight * 2 + spacing;
-        const startX = Math.floor((canvasWidth - gridWidth) / 2);
-        const startY = Math.floor((canvasHeight - gridHeight - logoSize) / 2);
+        // Calculate positions for left and right columns - ensure integers
+        const leftColumnX = Math.floor(
+          spacing / 4 + (halfCanvasWidth - photoWidth) / 2
+        );
+        const rightColumnX = Math.floor(
+          halfCanvasWidth + spacing / 4 + (halfCanvasWidth - photoWidth) / 2
+        );
+
+        // Start photos from top with proper margin - don't position too close to top
+        const topMargin = 80; // Increased top margin to move photos away from top border
+        const startY = Math.floor(topMargin);
 
         composition = [
-          { input: resizedImages[0], left: startX, top: startY },
+          // Left column: Photo1 top, Photo2 bottom
+          { input: resizedImages[0], left: leftColumnX, top: startY },
           {
             input: resizedImages[1],
-            left: startX + photoWidth + spacing,
+            left: leftColumnX,
+            top: startY + photoHeight + verticalSpacing, // Add proper vertical spacing
+          },
+          // Right column: Photo3 top, Photo4 bottom
+          {
+            input: resizedImages[2],
+            left: rightColumnX,
             top: startY,
           },
           {
-            input: resizedImages[2],
-            left: startX,
-            top: startY + photoHeight + spacing,
-          },
-          {
             input: resizedImages[3],
-            left: startX + photoWidth + spacing,
-            top: startY + photoHeight + spacing,
+            left: rightColumnX,
+            top: startY + photoHeight + verticalSpacing, // Add proper vertical spacing
           },
         ];
-      }
 
-      // Add logo if provided
-      if (logoPath && fs.existsSync(logoPath)) {
-        const logoBuffer = await sharp(logoPath)
-          .resize(logoSize, logoSize, { fit: "contain" })
-          .toBuffer();
+        // Add single centered logo for 4x6 layout (independent of vertical spacing)
+        if (logoPath && fs.existsSync(logoPath)) {
+          try {
+            const logoBuffer = await sharp(logoPath)
+              .resize(logoSize, logoSize, {
+                fit: "contain",
+                background: { r: 255, g: 255, b: 255, alpha: 0 },
+              })
+              .toBuffer();
 
-        let logoLeft: number;
-        let logoTop: number;
+            const logoLeft = Math.floor((canvasWidth - logoSize) / 2);
+            const logoTop = Math.floor(canvasHeight - logoSize - 10); // Reduced from 20 to 10
 
-        switch (logoPosition) {
-          case "bottom-center":
-            logoLeft = Math.floor((canvasWidth - logoSize) / 2);
-            logoTop = canvasHeight - logoSize - spacing;
-            break;
-          case "bottom-left":
-            logoLeft = spacing;
-            logoTop = canvasHeight - logoSize - spacing;
-            break;
-          case "bottom-right":
-            logoLeft = canvasWidth - logoSize - spacing;
-            logoTop = canvasHeight - logoSize - spacing;
-            break;
-          case "top-center":
-            logoLeft = Math.floor((canvasWidth - logoSize) / 2);
-            logoTop = spacing;
-            break;
-          default:
-            logoLeft = Math.floor((canvasWidth - logoSize) / 2);
-            logoTop = canvasHeight - logoSize - spacing;
+            composition.push({
+              input: logoBuffer,
+              left: logoLeft,
+              top: logoTop,
+            });
+
+            console.log(
+              `Logo added to 4x6 collage at position: ${logoLeft}, ${logoTop} with size: ${logoSize}px`
+            );
+          } catch (logoError) {
+            console.warn("Failed to process logo:", logoError);
+          }
         }
-
-        composition.push({
-          input: logoBuffer,
-          left: logoLeft,
-          top: logoTop,
-        });
       }
 
       // Build the collage with A6 dimensions

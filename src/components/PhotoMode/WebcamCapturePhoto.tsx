@@ -351,12 +351,13 @@ const WebcamCapturePhoto: React.FC<WebcamCapturePhotoProps> = ({
           {/* Webcam Preview */}
           <Card className="glass-card mb-4 flex-1 min-h-0">
             <CardContent className="p-4 h-full">
-              <div className="relative h-full">
+              <div className="relative h-full max-w-md mx-auto">
                 <video
                   ref={videoRef}
                   playsInline
                   muted
                   className="capture-frame w-full h-full object-cover rounded-lg bg-black"
+                  style={{ aspectRatio: "3/4" }} // Maintain 3:4 aspect ratio
                 />
                 <canvas ref={canvasRef} className="hidden" />
 
