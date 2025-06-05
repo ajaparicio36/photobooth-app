@@ -78,6 +78,16 @@ export interface ElectronAPI {
     outputPath: string,
     options?: any
   ) => Promise<{ jpegPath: string; pdfPath: string }>;
+
+  // Audio controls
+  playAudio: (
+    audioPath: string,
+    volume?: number
+  ) => Promise<{ success: boolean; path?: string; error?: string }>;
+  stopAudio: () => Promise<{ success: boolean; error?: string }>;
+  setAudioVolume: (
+    volume: number
+  ) => Promise<{ success: boolean; volume: number }>;
 }
 
 declare global {

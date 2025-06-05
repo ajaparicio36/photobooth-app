@@ -30,8 +30,25 @@
     "files": [
       "dist/**/*",
       "dist-electron/**/*",
+      "public/**/*",
       "package.json",
       "!node_modules/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "public",
+        "to": "public",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "node_modules/sharp",
+        "to": "node_modules/sharp",
+        "filter": [
+          "**/*"
+        ]
+      }
     ],
     "asarUnpack": [
       "**/node_modules/sharp/**/*",
@@ -63,16 +80,7 @@
     },
     "extraMetadata": {
       "name": "photobooth-app"
-    },
-    "extraResources": [
-      {
-        "from": "node_modules/sharp",
-        "to": "node_modules/sharp",
-        "filter": [
-          "**/*"
-        ]
-      }
-    ]
+    }
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

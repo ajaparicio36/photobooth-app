@@ -28,7 +28,11 @@ export default defineConfig({
         manualChunks: undefined,
       },
     },
+    // Ensure public assets are copied
+    copyPublicDir: true,
   },
+  // Ensure public folder is served in dev
+  publicDir: "public",
   css: {
     postcss: {
       plugins: [require("tailwindcss"), require("autoprefixer")],

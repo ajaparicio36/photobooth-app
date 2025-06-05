@@ -70,4 +70,11 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("build-collage", imagePaths, outputPath, options),
   generatePrintPDF: (imagePaths: string[], outputPath: string, options?: any) =>
     ipcRenderer.invoke("generate-print-pdf", imagePaths, outputPath, options),
+
+  // Audio controls
+  playAudio: (audioPath: string, volume?: number) =>
+    ipcRenderer.invoke("play-audio", audioPath, volume),
+  stopAudio: () => ipcRenderer.invoke("stop-audio"),
+  setAudioVolume: (volume: number) =>
+    ipcRenderer.invoke("set-audio-volume", volume),
 });

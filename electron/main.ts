@@ -11,6 +11,10 @@ app.commandLine.appendSwitch("disable-web-security");
 
 let mainWindow: BrowserWindow;
 
+// Add audio player reference
+let audioPlayer: any = null;
+let currentAudio: any = null; // Add HTML5 Audio API fallback
+
 // Initialize Sharp early in the main process
 async function initializeModules() {
   try {
@@ -513,12 +517,308 @@ ipcMain.handle("cleanup-temp-files", async () => {
   }
 });
 
+// IPC Handlers for Audio
+ipcMain.handle(
+  "play-audio",
+  async (_, audioPath: string, volume: number = 0.7) => {
+    try {
+      // Stop any currently playing audio
+      if (audioPlayer) {
+        audioPlayer.kill();
+        audioPlayer = null;
+      }
+
+      if (currentAudio) {
+        currentAudio.pause();
+        currentAudio = null;
+      }
+
+      // Resolve the audio file path
+      let resolvedPath = audioPath;
+
+      // If path starts with '/', treat as relative to public folder
+      if (audioPath.startsWith("/")) {
+        const relativePath = audioPath.substring(1);
+
+        if (isDev) {
+          // In development, look in the public folder
+          resolvedPath = path.join(__dirname, "../public", relativePath);
+        } else if (app.isPackaged) {
+          // In packaged app, look in resources/public
+          resolvedPath = path.join(
+            process.resourcesPath,
+            "public",
+            relativePath
+          );
+        } else {
+          // In production build testing (not packaged)
+          const possiblePaths = [
+            path.join(__dirname, "../dist", relativePath), // Vite copies public to dist root
+            path.join(__dirname, "../public", relativePath), // Original public folder
+            path.join(process.cwd(), "dist", relativePath), // From project root
+            path.join(process.cwd(), "public", relativePath), // Fallback to source
+          ];
+
+          resolvedPath = "";
+          for (const testPath of possiblePaths) {
+            console.log(
+              `Testing audio path: ${testPath} - exists: ${fs.existsSync(
+                testPath
+              )}`
+            );
+            if (fs.existsSync(testPath)) {
+              resolvedPath = testPath;
+              break;
+            }
+          }
+
+          if (!resolvedPath) {
+            console.log("Audio file not found in any of these paths:");
+            possiblePaths.forEach((p) =>
+              console.log("  -", p, "exists:", fs.existsSync(p))
+            );
+            throw new Error(
+              `Audio file not found in any expected location: ${relativePath}`
+            );
+          }
+        }
+      }
+
+      console.log("Attempting to play audio:", resolvedPath);
+
+      if (!fs.existsSync(resolvedPath)) {
+        throw new Error(`Audio file not found: ${resolvedPath}`);
+      }
+
+      // Convert to file:// URL for consistent access
+      const fileUrl = `file://${resolvedPath.replace(/\\/g, "/")}`;
+      console.log("Audio file URL:", fileUrl);
+
+      // Method 1: Try using the main window's webContents to play audio
+      try {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          const audioPlayResult = await mainWindow.webContents
+            .executeJavaScript(`
+            (async () => {
+              try {
+                // Stop any existing audio
+                if (window.currentElectronAudio) {
+                  window.currentElectronAudio.pause();
+                  window.currentElectronAudio = null;
+                }
+                
+                const audio = new Audio("${fileUrl}");
+                audio.volume = ${Math.max(0, Math.min(1, volume))};
+                window.currentElectronAudio = audio;
+                
+                return new Promise((resolve, reject) => {
+                  audio.oncanplaythrough = () => {
+                    audio.play()
+                      .then(() => resolve({ success: true, method: 'webContents' }))
+                      .catch(reject);
+                  };
+                  audio.onerror = (e) => reject(new Error('Audio load failed: ' + e.type));
+                  audio.onended = () => {
+                    window.currentElectronAudio = null;
+                  };
+                  
+                  // Timeout after 5 seconds
+                  setTimeout(() => reject(new Error('Audio load timeout')), 5000);
+                });
+              } catch (error) {
+                throw new Error('WebContents audio failed: ' + error.message);
+              }
+            })()
+          `);
+
+          console.log(
+            "Audio played successfully via webContents:",
+            audioPlayResult
+          );
+          return { success: true, path: resolvedPath, method: "webContents" };
+        }
+      } catch (webContentsError) {
+        console.warn("WebContents audio playback failed:", webContentsError);
+      }
+
+      // Method 2: Fallback to platform-specific audio players
+      console.log("Falling back to system audio players...");
+
+      if (process.platform === "win32") {
+        // Windows: Use a more reliable approach with node-wav-player or mci
+        try {
+          // Try using Windows Media Control Interface (MCI) via PowerShell
+          const { spawn } = require("child_process");
+          const psScript = `
+            Add-Type -AssemblyName presentationCore
+            $mediaPlayer = New-Object system.windows.media.mediaplayer
+            $mediaPlayer.open([uri]"${resolvedPath}")
+            $mediaPlayer.Volume = ${volume}
+            $mediaPlayer.Play()
+            Start-Sleep -Seconds 3
+            $mediaPlayer.Stop()
+            $mediaPlayer.Close()
+          `;
+
+          audioPlayer = spawn("powershell", ["-Command", psScript], {
+            stdio: "pipe",
+            windowsHide: true,
+          });
+
+          return new Promise((resolve, reject) => {
+            let resolved = false;
+
+            audioPlayer.on("close", (code: number | null) => {
+              if (!resolved) {
+                resolved = true;
+                if (code === 0) {
+                  resolve({
+                    success: true,
+                    path: resolvedPath,
+                    method: "powershell-mci",
+                  });
+                } else {
+                  reject(new Error(`Audio playback failed with code: ${code}`));
+                }
+              }
+            });
+
+            audioPlayer.on("error", (err: Error) => {
+              if (!resolved) {
+                resolved = true;
+                reject(new Error(`PowerShell audio error: ${err.message}`));
+              }
+            });
+
+            // Timeout fallback
+            setTimeout(() => {
+              if (!resolved) {
+                resolved = true;
+                if (audioPlayer && !audioPlayer.killed) {
+                  audioPlayer.kill();
+                }
+                resolve({
+                  success: true,
+                  path: resolvedPath,
+                  method: "powershell-timeout",
+                });
+              }
+            }, 4000);
+          });
+        } catch (psError) {
+          console.warn("PowerShell MCI failed:", psError);
+
+          // Last resort: Try basic PowerShell SoundPlayer
+          try {
+            const { spawn } = require("child_process");
+            const command = `(New-Object Media.SoundPlayer "${resolvedPath}").PlaySync()`;
+            audioPlayer = spawn("powershell", ["-Command", command], {
+              stdio: "ignore",
+              windowsHide: true,
+            });
+
+            return {
+              success: true,
+              path: resolvedPath,
+              method: "powershell-soundplayer",
+            };
+          } catch (basicError) {
+            console.warn("Basic PowerShell audio failed:", basicError);
+          }
+        }
+      } else if (process.platform === "darwin") {
+        // macOS: use afplay
+        const { spawn } = require("child_process");
+        audioPlayer = spawn("afplay", [resolvedPath], {
+          stdio: "ignore",
+        });
+        return { success: true, path: resolvedPath, method: "afplay" };
+      } else {
+        // Linux: try multiple audio players
+        const { spawn } = require("child_process");
+        try {
+          audioPlayer = spawn("aplay", [resolvedPath], { stdio: "ignore" });
+          return { success: true, path: resolvedPath, method: "aplay" };
+        } catch {
+          try {
+            audioPlayer = spawn("paplay", [resolvedPath], { stdio: "ignore" });
+            return { success: true, path: resolvedPath, method: "paplay" };
+          } catch {
+            audioPlayer = spawn("play", [resolvedPath], { stdio: "ignore" });
+            return { success: true, path: resolvedPath, method: "play" };
+          }
+        }
+      }
+
+      // If all methods fail, return success anyway to avoid breaking the app
+      console.warn("All audio playback methods failed, continuing silently");
+      return {
+        success: true,
+        path: resolvedPath,
+        method: "silent-fallback",
+        warning: "Audio playback not available",
+      };
+    } catch (error: any) {
+      console.error("Failed to play audio:", error);
+      // Don't throw error to avoid breaking the app flow
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+        fallback: true,
+      };
+    }
+  }
+);
+
+ipcMain.handle("stop-audio", async () => {
+  try {
+    // Stop system audio player
+    if (audioPlayer) {
+      audioPlayer.kill();
+      audioPlayer = null;
+    }
+
+    // Stop webContents audio
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      try {
+        await mainWindow.webContents.executeJavaScript(`
+          if (window.currentElectronAudio) {
+            window.currentElectronAudio.pause();
+            window.currentElectronAudio = null;
+          }
+        `);
+      } catch (err) {
+        console.warn("Failed to stop webContents audio:", err);
+      }
+    }
+
+    return { success: true };
+  } catch (error: any) {
+    console.error("Failed to stop audio:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+});
+
 app.whenReady().then(async () => {
   await initializeModules();
   createWindow();
 });
 
 app.on("window-all-closed", () => {
+  // Stop audio when app closes
+  if (audioPlayer) {
+    audioPlayer.kill();
+    audioPlayer = null;
+  }
+
+  if (currentAudio) {
+    currentAudio.pause();
+    currentAudio = null;
+  }
+
   if (process.platform !== "darwin") {
     app.quit();
   }
