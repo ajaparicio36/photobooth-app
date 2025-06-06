@@ -73,7 +73,10 @@ export class FlipbookManager {
         aspectRatio = 16 / 9,
         logoSize = 200,
         filterName,
+        orientation = "landscape", // Default to landscape for flipbooks
       } = options;
+
+      const isLandscape = orientation === "landscape";
 
       // Step 1: Extract frames from video with higher frame rate
       let extractionResult;
@@ -171,15 +174,21 @@ export class FlipbookManager {
           backgroundColor,
           spacing,
           aspectRatio,
-          logoSize,
+          logoSize: isLandscape ? 0 : logoSize, // No logo for landscape flipbook
           framesPerPage,
+          pageNumber: pageIndex + 1, // Add page number
+          isLandscape, // Pass landscape flag
         });
         pageImagePaths.push(pagePath);
       }
 
-      // Step 6: Create PDF from pages
+      // Step 6: Create PDF from pages with correct orientation
       const pdfPath = path.join(outputDir, "flipbook_final.pdf");
-      await this.createFlipbookPDFFromImages(pageImagePaths, pdfPath);
+      await this.createFlipbookPDFFromImages(
+        pageImagePaths,
+        pdfPath,
+        isLandscape
+      );
 
       console.log("Flipbook creation completed successfully.");
 
@@ -282,6 +291,8 @@ export class FlipbookManager {
       aspectRatio: number;
       logoSize: number;
       framesPerPage: number;
+      pageNumber?: number; // Added for page numbering
+      isLandscape?: boolean; // Added for landscape support
     }
   ): Promise<void> {
     if (!sharpManager.isSharpAvailable()) {
@@ -289,26 +300,66 @@ export class FlipbookManager {
     }
     const sharp = require("sharp");
 
-    const { backgroundColor, spacing, aspectRatio, logoSize, framesPerPage } =
-      options;
+    const {
+      backgroundColor,
+      spacing,
+      aspectRatio,
+      framesPerPage,
+      pageNumber,
+      isLandscape,
+    } = options;
 
-    // A6 dimensions: 105mm x 148mm. At 300 DPI = 1240px x 1748px.
-    // Using slightly smaller for safety: 1200x1700
-    const canvasWidth = 1200;
-    const canvasHeight = 1700;
+    // A6 dimensions - swap for landscape
+    let canvasWidth: number;
+    let canvasHeight: number;
 
-    const logoSpaceHeight = logoSize > 0 ? logoSize + spacing * 2 : spacing;
-    const availableHeight = canvasHeight - logoSpaceHeight - spacing; // Top margin
-    const availableWidth = canvasWidth - spacing * 2; // Side margins
+    if (isLandscape) {
+      // A6 landscape: 148mm x 105mm at 300 DPI = 1748px x 1240px
+      canvasWidth = 1748;
+      canvasHeight = 1240;
+    } else {
+      // A6 portrait: 105mm x 148mm at 300 DPI = 1240px x 1748px
+      canvasWidth = 1200;
+      canvasHeight = 1700;
+    }
+
+    // For flipbook landscape mode, don't reserve space for logo
+    const logoSpaceHeight = isLandscape
+      ? 0
+      : options.logoSize > 0
+      ? options.logoSize + spacing * 2
+      : spacing;
+
+    // Increase margins for landscape flipbook mode
+    const topBottomMargin = isLandscape ? 80 : spacing;
+    const sideMargin = isLandscape ? 60 : spacing * 2;
+
+    const availableHeight =
+      canvasHeight - logoSpaceHeight - topBottomMargin * 2;
+    const availableWidth = canvasWidth - sideMargin * 2;
+
+    // Reserve space for page number in landscape mode
+    const pageNumberHeight = isLandscape ? 40 : 0;
+    const effectiveAvailableHeight = availableHeight - pageNumberHeight;
 
     const cols = Math.ceil(Math.sqrt(framesPerPage)); // e.g., 3 for 9 frames
     const rows = Math.ceil(framesPerPage / cols); // e.g., 3 for 9 frames
 
-    let frameWidth = Math.floor((availableWidth - spacing * (cols - 1)) / cols);
+    // Increase spacing between frames for landscape mode
+    const frameSpacing = isLandscape ? spacing * 4 : spacing; // Increased from spacing to spacing * 4
+
+    let frameWidth = Math.floor(
+      (availableWidth - frameSpacing * (cols - 1)) / cols
+    );
     let frameHeight = Math.floor(frameWidth / aspectRatio);
 
-    if (frameHeight * rows + spacing * (rows - 1) > availableHeight) {
-      frameHeight = Math.floor((availableHeight - spacing * (rows - 1)) / rows);
+    if (
+      frameHeight * rows + frameSpacing * (rows - 1) >
+      effectiveAvailableHeight
+    ) {
+      frameHeight = Math.floor(
+        (effectiveAvailableHeight - frameSpacing * (rows - 1)) / rows
+      );
       frameWidth = Math.floor(frameHeight * aspectRatio);
     }
 
@@ -320,11 +371,12 @@ export class FlipbookManager {
       )
     );
 
-    const totalGridWidth = frameWidth * cols + spacing * (cols - 1);
-    const totalGridHeight = frameHeight * rows + spacing * (rows - 1);
+    const totalGridWidth = frameWidth * cols + frameSpacing * (cols - 1);
+    const totalGridHeight = frameHeight * rows + frameSpacing * (rows - 1);
     const startX = Math.floor((canvasWidth - totalGridWidth) / 2);
     const startY =
-      spacing + Math.floor((availableHeight - totalGridHeight) / 2);
+      topBottomMargin +
+      Math.floor((effectiveAvailableHeight - totalGridHeight) / 2);
 
     const composites: any[] = [];
     resizedFrames.forEach((buffer, i) => {
@@ -332,30 +384,60 @@ export class FlipbookManager {
       const c = i % cols;
       composites.push({
         input: buffer,
-        left: startX + c * (frameWidth + spacing),
-        top: startY + r * (frameHeight + spacing),
+        left: startX + c * (frameWidth + frameSpacing),
+        top: startY + r * (frameHeight + frameSpacing),
       });
     });
 
-    // Add logo if path exists and size > 0
+    // Add page number for landscape flipbook mode
+    if (isLandscape && pageNumber !== undefined) {
+      try {
+        const pageNumberText = `${pageNumber}`;
+        const fontSize = 32;
+
+        // Create text overlay using SVG
+        const textSvg = `
+          <svg width="100" height="50">
+            <text x="50" y="35" font-family="Arial, sans-serif" font-size="${fontSize}" 
+                  font-weight="bold" text-anchor="middle" fill="black">${pageNumberText}</text>
+          </svg>
+        `;
+
+        const textBuffer = Buffer.from(textSvg);
+        const pageNumberX = canvasWidth - 120; // 120px from right edge
+        const pageNumberY = canvasHeight - 60; // 60px from bottom
+
+        composites.push({
+          input: textBuffer,
+          left: pageNumberX,
+          top: pageNumberY,
+        });
+
+        console.log(`Added page number ${pageNumber} to flipbook page`);
+      } catch (pageNumberError) {
+        console.warn("Failed to add page number:", pageNumberError);
+      }
+    }
+
+    // Add logo only for portrait mode (non-flipbook)
     const logoAssetPath = path.join(
       process.resourcesPath,
       "public",
       "logo",
       "logo.png"
-    ); // Adjust as needed
-    if (options.logoSize > 0 && fs.existsSync(logoAssetPath)) {
+    );
+    if (!isLandscape && options.logoSize > 0 && fs.existsSync(logoAssetPath)) {
       try {
         const logoBuffer = await sharp(logoAssetPath)
           .resize(options.logoSize, options.logoSize, {
             fit: "contain",
-            background: { r: 0, g: 0, b: 0, alpha: 0 }, // Transparent background
+            background: { r: 0, g: 0, b: 0, alpha: 0 },
           })
-          .png() // Ensure logo is PNG for transparency
+          .png()
           .toBuffer();
 
         const logoX = Math.floor((canvasWidth - options.logoSize) / 2);
-        const logoY = canvasHeight - options.logoSize - spacing; // Place at bottom
+        const logoY = canvasHeight - options.logoSize - spacing;
         composites.push({
           input: logoBuffer,
           left: logoX,
@@ -370,7 +452,7 @@ export class FlipbookManager {
       create: {
         width: canvasWidth,
         height: canvasHeight,
-        channels: 4, // Use 4 channels for RGBA if logo has transparency
+        channels: 4,
         background: backgroundColor,
       },
     })
@@ -382,22 +464,41 @@ export class FlipbookManager {
 
   private async createFlipbookPDFFromImages(
     pageImagePaths: string[],
-    outputPath: string
+    outputPath: string,
+    isLandscape: boolean = false
   ): Promise<void> {
     if (!sharpManager.isPDFAvailable()) {
-      // Relies on PDFKit being available via SharpManager's check
       console.warn(
         "PDFKit not available, skipping PDF generation for flipbook."
       );
       return;
     }
     const PDFDocument = require("pdfkit");
-    const doc = new PDFDocument({
-      size: [1240, 1748], // A6 @ 300 DPI in points (approx) - or use standard 'A6' string
-      // size: 'A6', // Standard A6 size
-      margin: 0,
-      layout: "portrait",
-    });
+
+    // Use exact pixel dimensions converted to points for proper scaling
+    // Our images are 1748x1240px, convert to points (1 point = 1/72 inch, 1 inch = 96 pixels)
+    let pageOptions: any;
+
+    if (isLandscape) {
+      // Convert 1748x1240px to points: (pixels / 96) * 72
+      const widthPoints = (1748 / 96) * 72; // ≈ 1311 points
+      const heightPoints = (1240 / 96) * 72; // ≈ 930 points
+
+      pageOptions = {
+        size: [widthPoints, heightPoints], // These are already landscape W > H
+        margin: 0,
+        layout: "portrait", // Use 'portrait' layout if size array is already landscape
+      };
+    } else {
+      // Portrait A6: 297.64 x 420.94 points
+      pageOptions = {
+        size: [297.64, 420.94],
+        margin: 0,
+        layout: "portrait",
+      };
+    }
+
+    const doc = new PDFDocument(pageOptions);
 
     const stream = fs.createWriteStream(outputPath);
     doc.pipe(stream);
@@ -406,19 +507,26 @@ export class FlipbookManager {
       if (i > 0) doc.addPage();
       const pagePath = pageImagePaths[i];
       if (fs.existsSync(pagePath)) {
-        // Fit image to page, maintaining aspect ratio
+        // Fill the page exactly with the image - no scaling, no stretching
         doc.image(pagePath, 0, 0, {
-          fit: [doc.page.width, doc.page.height],
-          align: "center",
-          valign: "center",
+          width: doc.page.width,
+          height: doc.page.height,
         });
+
+        console.log(
+          `PDF Page ${i + 1}: Image ${pagePath} fitted to ${doc.page.width} x ${
+            doc.page.height
+          } points`
+        );
       }
     }
     doc.end();
 
     return new Promise((resolve, reject) => {
       stream.on("finish", () => {
-        console.log(`Created flipbook PDF: ${outputPath}`);
+        console.log(
+          `Created flipbook PDF: ${outputPath} (landscape: ${isLandscape})`
+        );
         resolve();
       });
       stream.on("error", reject);

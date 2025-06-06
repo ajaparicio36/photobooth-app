@@ -25,6 +25,7 @@ export interface FlipbookOptions {
   logoPath?: string;
   logoSize?: number;
   filterName?: string; // Added for applying a Sharp filter to frames
+  orientation?: "portrait" | "landscape"; // Added for flipbook landscape support
 }
 
 export interface FlipbookResult {
