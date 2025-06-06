@@ -75,7 +75,7 @@ export class FlipbookManager {
         filterName,
       } = options;
 
-      // Step 1: Extract frames from video
+      // Step 1: Extract frames from video with higher frame rate
       let extractionResult;
       try {
         extractionResult = await ffmpegManager.extractFrames(
@@ -83,7 +83,7 @@ export class FlipbookManager {
           tempRawFrameDir,
           {
             duration: 7,
-            fps: 1.5,
+            fps: 8, // Increased from 1.5 to 8 fps for more frames
             width: 1920,
             height: 1080,
             format: "jpg",

@@ -1,28 +1,175 @@
 import * as fs from "fs";
+import * as path from "path";
+import { app } from "electron";
 import { Printer, PrintOptions, PrintJob } from "../types/printer.type";
 
-// Import printer with error handling
+// Import printer with comprehensive error handling and fallback
 let printer: any = null;
-try {
-  printer = require("@grandchef/node-printer");
-} catch (error) {
-  console.error("Failed to load printer module:", error);
+let printerAvailable = false;
+
+async function initializePrinter(): Promise<void> {
+  try {
+    console.log("🖨️ Initializing printer module...");
+
+    if (app.isPackaged) {
+      // Simplified approach - try the most likely paths first
+      const possiblePrinterPaths = [
+        // ASAR unpacked is the most likely location for packaged apps
+        path.join(
+          process.resourcesPath,
+          "app.asar.unpacked",
+          "node_modules",
+          "@grandchef",
+          "node-printer"
+        ),
+        // Fallback paths
+        path.join(
+          process.resourcesPath,
+          "node_modules",
+          "@grandchef",
+          "node-printer"
+        ),
+        path.join(
+          __dirname,
+          "..",
+          "..",
+          "node_modules",
+          "@grandchef",
+          "node-printer"
+        ),
+        path.join(process.cwd(), "node_modules", "@grandchef", "node-printer"),
+      ];
+
+      let printerLoaded = false;
+
+      console.log("📍 Searching for printer module in packaged app...");
+
+      for (const printerPath of possiblePrinterPaths) {
+        try {
+          console.log(`🔍 Trying printer path: ${printerPath}`);
+
+          if (fs.existsSync(printerPath)) {
+            console.log(`✅ Path exists: ${printerPath}`);
+
+            // Try to require the module directly - let Node.js handle the binary loading
+            try {
+              // Clear require cache to force fresh load
+              const moduleId = require.resolve(printerPath);
+              if (require.cache[moduleId]) {
+                delete require.cache[moduleId];
+              }
+
+              printer = require(printerPath);
+
+              // Test the module immediately
+              const testPrinters = printer.getPrinters();
+              if (Array.isArray(testPrinters)) {
+                console.log(
+                  `✅ Printer loaded and tested successfully from: ${printerPath}`
+                );
+                printerLoaded = true;
+                break;
+              } else {
+                throw new Error("getPrinters() returned invalid data");
+              }
+            } catch (loadError: unknown) {
+              const errorMsg =
+                loadError instanceof Error
+                  ? loadError.message
+                  : String(loadError);
+              console.warn(
+                `⚠️ Failed to load/test printer from ${printerPath}:`,
+                errorMsg
+              );
+
+              if (errorMsg.includes("Module did not self-register")) {
+                console.warn(
+                  `💡 Binary compatibility issue detected for ${printerPath}`
+                );
+              }
+
+              // Continue to next path
+              printer = null;
+            }
+          } else {
+            console.log(`❌ Path does not exist: ${printerPath}`);
+          }
+        } catch (pathError: unknown) {
+          console.warn(
+            `Failed to check printer path ${printerPath}:`,
+            pathError instanceof Error ? pathError.message : String(pathError)
+          );
+        }
+      }
+
+      if (!printerLoaded) {
+        throw new Error(
+          "Could not load printer module from any expected location"
+        );
+      }
+    } else {
+      // Development mode - simpler approach
+      console.log("🔧 Loading printer in development mode...");
+      printer = require("@grandchef/node-printer");
+
+      // Test the module
+      const testPrinters = printer.getPrinters();
+      if (!Array.isArray(testPrinters)) {
+        throw new Error("Printer module test failed");
+      }
+
+      console.log("✅ Printer loaded in development");
+    }
+
+    // Final verification
+    if (printer && typeof printer.getPrinters === "function") {
+      printerAvailable = true;
+      console.log("✅ Printer module initialization successful");
+    } else {
+      throw new Error(
+        "Printer module loaded but getPrinters function not available"
+      );
+    }
+  } catch (error) {
+    console.error("❌ Failed to initialize printer module:", error);
+    console.warn("🖨️ Printer features will run in mock mode");
+    printer = null;
+    printerAvailable = false;
+  }
 }
+
+// Initialize when module loads
+initializePrinter();
 
 export class PrinterManager {
   private isPrinterAvailable: boolean;
 
   constructor() {
-    this.isPrinterAvailable = !!printer;
+    this.isPrinterAvailable = printerAvailable;
     if (!this.isPrinterAvailable) {
       console.warn("Printer module not available. Running in mock mode.");
     }
   }
 
+  async reinitializePrinter(): Promise<boolean> {
+    console.log("🔄 Reinitializing printer module...");
+    await initializePrinter();
+    this.isPrinterAvailable = printerAvailable;
+
+    if (printerAvailable) {
+      console.log("✅ Printer reinitialization successful");
+    } else {
+      console.warn("⚠️ Printer reinitialization failed - staying in mock mode");
+    }
+
+    return printerAvailable;
+  }
+
   async getAvailablePrinters(): Promise<Printer[]> {
     return new Promise((resolve, reject) => {
       try {
-        if (!this.isPrinterAvailable) {
+        if (!this.isPrinterAvailable || !printer) {
+          console.log("📋 Returning mock printer (module not available)");
           resolve([
             {
               name: "Mock Printer",
@@ -34,24 +181,60 @@ export class PrinterManager {
           return;
         }
 
+        console.log("📋 Getting real printers...");
         const printers = printer.getPrinters();
+
+        if (!Array.isArray(printers)) {
+          throw new Error("getPrinters() returned invalid data");
+        }
+
         const formattedPrinters: Printer[] = printers.map((p: any) => ({
           name: p.name,
           displayName: p.displayName || p.name,
           status: p.status || "unknown",
           isDefault: p.isDefault || false,
         }));
+
+        console.log(`📊 Found ${formattedPrinters.length} real printers`);
         resolve(formattedPrinters);
       } catch (error) {
         console.error("Error getting printers:", error);
-        resolve([
-          {
-            name: "Error Printer",
-            displayName: "Printer Error - Check Console",
-            status: "error",
-            isDefault: true,
-          },
-        ]);
+
+        // Try to reinitialize once on error
+        this.reinitializePrinter().then((success) => {
+          if (success) {
+            // Retry once
+            try {
+              const printers = printer.getPrinters();
+              const formattedPrinters: Printer[] = printers.map((p: any) => ({
+                name: p.name,
+                displayName: p.displayName || p.name,
+                status: p.status || "unknown",
+                isDefault: p.isDefault || false,
+              }));
+              resolve(formattedPrinters);
+            } catch (retryError) {
+              console.error("Retry also failed:", retryError);
+              resolve([
+                {
+                  name: "Error Printer",
+                  displayName: "Printer Error - Check Console",
+                  status: "error",
+                  isDefault: true,
+                },
+              ]);
+            }
+          } else {
+            resolve([
+              {
+                name: "Error Printer",
+                displayName: "Printer Error - Check Console",
+                status: "error",
+                isDefault: true,
+              },
+            ]);
+          }
+        });
       }
     });
   }

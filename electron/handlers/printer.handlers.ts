@@ -4,10 +4,26 @@ import { printerManager } from "../utils/printer";
 export function registerPrinterHandlers() {
   ipcMain.handle("get-available-printers", async () => {
     try {
+      // Try to reinitialize if not available
+      if (!(await printerManager.isPrinterModuleAvailable())) {
+        console.log(
+          "Printer module not available, attempting to reinitialize..."
+        );
+        await printerManager.reinitializePrinter();
+      }
+
       return await printerManager.getAvailablePrinters();
     } catch (error) {
       console.error("Failed to get printers:", error);
-      throw error;
+      // Return mock printer instead of throwing
+      return [
+        {
+          name: "Mock Printer",
+          displayName: "Mock Printer (Module Error)",
+          status: "error",
+          isDefault: true,
+        },
+      ];
     }
   });
 
@@ -16,7 +32,12 @@ export function registerPrinterHandlers() {
       return await printerManager.getDefaultPrinter();
     } catch (error) {
       console.error("Failed to get default printer:", error);
-      throw error;
+      return {
+        name: "Mock Printer",
+        displayName: "Mock Printer (Module Error)",
+        status: "error",
+        isDefault: true,
+      };
     }
   });
 
@@ -43,8 +64,15 @@ export function registerPrinterHandlers() {
 
   ipcMain.handle("check-printer-health", async () => {
     try {
-      return await printerManager.isPrinterModuleAvailable();
+      const available = await printerManager.isPrinterModuleAvailable();
+      if (!available) {
+        // Try to reinitialize
+        const reinitResult = await printerManager.reinitializePrinter();
+        return reinitResult;
+      }
+      return available;
     } catch (error) {
+      console.error("Printer health check failed:", error);
       return false;
     }
   });

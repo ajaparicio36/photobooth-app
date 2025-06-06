@@ -14,180 +14,320 @@ let ffmpegAvailable = false;
 let ffmpegBinaryPath: string | null = null;
 let ffprobeBinaryPath: string | null = null;
 
+async function testBinaryPath(binaryPath: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const testProcess = spawn(binaryPath, ["-version"], {
+      stdio: "pipe",
+      windowsHide: true,
+    });
+
+    let hasOutput = false;
+
+    testProcess.stdout.on("data", (data) => {
+      const output = data.toString().toLowerCase();
+      if (output.includes("ffmpeg") || output.includes("ffprobe")) {
+        hasOutput = true;
+      }
+    });
+
+    testProcess.on("close", (code) => {
+      resolve(hasOutput && code === 0);
+    });
+
+    testProcess.on("error", () => {
+      resolve(false);
+    });
+
+    // Timeout after 3 seconds
+    setTimeout(() => {
+      if (!testProcess.killed) {
+        testProcess.kill();
+        resolve(false);
+      }
+    }, 3000);
+  });
+}
+
 async function findFFmpegBinaries(): Promise<{
   ffmpeg: string | null;
   ffprobe: string | null;
 }> {
-  // Try to find binaries in PATH first
-  for (const binary of ["ffmpeg", "ffprobe"]) {
+  console.log("🔍 Searching for FFmpeg binaries...");
+
+  // Try to find binaries in PATH first using 'where' on Windows
+  const searchCommands =
+    process.platform === "win32"
+      ? [
+          ["where", "ffmpeg"],
+          ["where", "ffprobe"],
+        ]
+      : [
+          ["which", "ffmpeg"],
+          ["which", "ffprobe"],
+        ];
+
+  let ffmpegPath: string | null = null;
+  let ffprobePath: string | null = null;
+
+  // Search in PATH
+  for (const [command, binary] of searchCommands) {
     try {
       const result = await new Promise<string | null>((resolve) => {
-        const which = spawn(process.platform === "win32" ? "where" : "which", [
-          binary,
-        ]);
+        const which = spawn(command, [binary], {
+          stdio: "pipe",
+          windowsHide: true,
+        });
         let output = "";
 
         which.stdout.on("data", (data) => {
           output += data.toString().trim();
         });
 
-        which.on("close", (code) => {
+        which.on("close", async (code) => {
           if (code === 0 && output) {
-            resolve(output.split("\n")[0].trim());
+            const foundPath = output.split("\n")[0].trim();
+            console.log(`Found ${binary} via ${command}: ${foundPath}`);
+
+            // Test if the binary actually works
+            const works = await testBinaryPath(foundPath);
+            if (works) {
+              resolve(foundPath);
+            } else {
+              console.warn(`${binary} found but doesn't work: ${foundPath}`);
+              resolve(null);
+            }
           } else {
             resolve(null);
           }
         });
 
         which.on("error", () => resolve(null));
+
+        setTimeout(() => {
+          if (!which.killed) {
+            which.kill();
+            resolve(null);
+          }
+        }, 5000);
       });
 
       if (result) {
         if (binary === "ffmpeg") {
-          return { ffmpeg: result, ffprobe: null };
-        }
-        if (binary === "ffprobe") {
-          // If we found ffprobe, ffmpeg should be in the same directory
-          const ffmpegPath = result.replace(/ffprobe(\.exe)?$/, "ffmpeg$1");
-          return {
-            ffmpeg: fs.existsSync(ffmpegPath) ? ffmpegPath : null,
-            ffprobe: result,
-          };
+          ffmpegPath = result;
+        } else if (binary === "ffprobe") {
+          ffprobePath = result;
         }
       }
     } catch (error) {
-      console.warn(`Failed to find ${binary} in PATH:`, error);
+      console.warn(`Failed to find ${binary} via ${command}:`, error);
+    }
+  }
+
+  // If we found ffmpeg but not ffprobe (or vice versa), try to find the other in the same directory
+  if (ffmpegPath && !ffprobePath) {
+    const dir = path.dirname(ffmpegPath);
+    const possibleProbe = path.join(
+      dir,
+      process.platform === "win32" ? "ffprobe.exe" : "ffprobe"
+    );
+    if (fs.existsSync(possibleProbe) && (await testBinaryPath(possibleProbe))) {
+      ffprobePath = possibleProbe;
+      console.log(`Found ffprobe in same directory as ffmpeg: ${ffprobePath}`);
+    }
+  }
+
+  if (ffprobePath && !ffmpegPath) {
+    const dir = path.dirname(ffprobePath);
+    const possibleMpeg = path.join(
+      dir,
+      process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg"
+    );
+    if (fs.existsSync(possibleMpeg) && (await testBinaryPath(possibleMpeg))) {
+      ffmpegPath = possibleMpeg;
+      console.log(`Found ffmpeg in same directory as ffprobe: ${ffmpegPath}`);
     }
   }
 
   // If not found in PATH, try common installation paths
-  const commonPaths =
-    process.platform === "win32"
-      ? [
-          "C:\\ProgramData\\chocolatey\\bin\\ffmpeg.exe",
-          "C:\\ProgramData\\chocolatey\\bin\\ffprobe.exe",
-          "C:\\ffmpeg\\bin\\ffmpeg.exe",
-          "C:\\ffmpeg\\bin\\ffprobe.exe",
-        ]
-      : [
-          "/usr/local/bin/ffmpeg",
-          "/usr/local/bin/ffprobe",
-          "/opt/homebrew/bin/ffmpeg",
-          "/opt/homebrew/bin/ffprobe",
-        ];
+  if (!ffmpegPath || !ffprobePath) {
+    console.log("🔍 Searching common installation paths...");
 
-  let ffmpegPath: string | null = null;
-  let ffprobePath: string | null = null;
+    const commonPaths =
+      process.platform === "win32"
+        ? [
+            "C:\\ProgramData\\chocolatey\\bin\\",
+            "C:\\ffmpeg\\bin\\",
+            "C:\\Program Files\\ffmpeg\\bin\\",
+            "C:\\Program Files (x86)\\ffmpeg\\bin\\",
+            "C:\\tools\\ffmpeg\\bin\\",
+          ]
+        : ["/usr/local/bin/", "/opt/homebrew/bin/", "/usr/bin/", "/snap/bin/"];
 
-  for (const testPath of commonPaths) {
-    if (fs.existsSync(testPath)) {
-      if (testPath.includes("ffmpeg")) {
-        ffmpegPath = testPath;
-        // Look for ffprobe in the same directory
-        const probePath = testPath.replace(/ffmpeg(\.exe)?$/, "ffprobe$1");
-        if (fs.existsSync(probePath)) {
-          ffprobePath = probePath;
-        }
-      } else if (testPath.includes("ffprobe")) {
-        ffprobePath = testPath;
-        // Look for ffmpeg in the same directory
-        const mpegPath = testPath.replace(/ffprobe(\.exe)?$/, "ffmpeg$1");
-        if (fs.existsSync(mpegPath)) {
-          ffmpegPath = mpegPath;
+    const binaries =
+      process.platform === "win32"
+        ? ["ffmpeg.exe", "ffprobe.exe"]
+        : ["ffmpeg", "ffprobe"];
+
+    for (const basePath of commonPaths) {
+      for (const binary of binaries) {
+        const fullPath = path.join(basePath, binary);
+        if (fs.existsSync(fullPath)) {
+          console.log(`Testing common path: ${fullPath}`);
+          const works = await testBinaryPath(fullPath);
+          if (works) {
+            if (binary.includes("ffmpeg") && !ffmpegPath) {
+              ffmpegPath = fullPath;
+              console.log(`✅ Found working ffmpeg: ${fullPath}`);
+            } else if (binary.includes("ffprobe") && !ffprobePath) {
+              ffprobePath = fullPath;
+              console.log(`✅ Found working ffprobe: ${fullPath}`);
+            }
+          }
         }
       }
 
-      // If we found both, break
-      if (ffmpegPath && ffprobePath) {
-        break;
-      }
+      // If we found both in this directory, break
+      if (ffmpegPath && ffprobePath) break;
     }
   }
+
+  console.log("📊 FFmpeg binary search results:");
+  console.log(`  ffmpeg: ${ffmpegPath || "❌ not found"}`);
+  console.log(`  ffprobe: ${ffprobePath || "❌ not found"}`);
 
   return { ffmpeg: ffmpegPath, ffprobe: ffprobePath };
 }
 
 async function initializeFFmpeg(): Promise<void> {
   try {
+    console.log("🚀 Initializing FFmpeg...");
+
     // First, try to find FFmpeg binaries
     const binaries = await findFFmpegBinaries();
     ffmpegBinaryPath = binaries.ffmpeg;
     ffprobeBinaryPath = binaries.ffprobe;
 
-    console.log("FFmpeg binary search results:");
-    console.log("  ffmpeg:", ffmpegBinaryPath || "not found");
-    console.log("  ffprobe:", ffprobeBinaryPath || "not found");
-
     if (!ffmpegBinaryPath || !ffprobeBinaryPath) {
       console.warn(
-        "FFmpeg binaries not found. Please ensure FFmpeg is installed and in PATH."
+        "⚠️ FFmpeg binaries not found. Please ensure FFmpeg is installed:"
       );
-      console.warn("Install via Chocolatey: choco install ffmpeg");
-      console.warn("Or download from: https://ffmpeg.org/download.html");
+      console.warn("  Windows: choco install ffmpeg");
+      console.warn("  macOS: brew install ffmpeg");
+      console.warn("  Linux: sudo apt install ffmpeg");
+      console.warn("  Manual: https://ffmpeg.org/download.html");
+
+      ffmpegAvailable = false;
+      return;
     }
 
     // Try to load fluent-ffmpeg module
     let moduleFound = false;
 
-    if (app.isPackaged) {
-      try {
-        const unpackedFFmpegPath = path.join(
-          process.resourcesPath,
-          "app.asar.unpacked",
-          "node_modules",
-          "fluent-ffmpeg"
-        );
+    try {
+      console.log("📦 Loading fluent-ffmpeg module...");
 
-        if (fs.existsSync(unpackedFFmpegPath)) {
-          ffmpeg = require(unpackedFFmpegPath);
-          console.log("fluent-ffmpeg loaded from unpacked path");
-          moduleFound = true;
+      if (app.isPackaged) {
+        const possibleFFmpegPaths = [
+          path.join(
+            process.resourcesPath,
+            "app.asar.unpacked",
+            "node_modules",
+            "fluent-ffmpeg"
+          ),
+          path.join(process.resourcesPath, "node_modules", "fluent-ffmpeg"),
+          path.join(__dirname, "..", "..", "node_modules", "fluent-ffmpeg"),
+          path.join(process.cwd(), "node_modules", "fluent-ffmpeg"),
+        ];
+
+        for (const ffmpegModulePath of possibleFFmpegPaths) {
+          try {
+            console.log(`  Trying: ${ffmpegModulePath}`);
+            if (fs.existsSync(ffmpegModulePath)) {
+              ffmpeg = require(ffmpegModulePath);
+              console.log(`✅ fluent-ffmpeg loaded from: ${ffmpegModulePath}`);
+              moduleFound = true;
+              break;
+            }
+          } catch (pathError: unknown) {
+            console.warn(
+              `  Failed to load from ${ffmpegModulePath}:`,
+              pathError instanceof Error ? pathError.message : String(pathError)
+            );
+          }
         }
-      } catch (unpackedError: unknown) {
-        console.warn(
-          "Failed to load from unpacked path:",
-          unpackedError instanceof Error
-            ? unpackedError.message
-            : String(unpackedError)
-        );
-      }
 
-      if (!moduleFound) {
+        if (!moduleFound) {
+          try {
+            ffmpeg = require("fluent-ffmpeg");
+            console.log("✅ fluent-ffmpeg loaded from regular require");
+            moduleFound = true;
+          } catch (fallbackError: unknown) {
+            console.warn(
+              "❌ Failed regular require:",
+              fallbackError instanceof Error
+                ? fallbackError.message
+                : String(fallbackError)
+            );
+          }
+        }
+      } else {
+        // Development mode
         try {
           ffmpeg = require("fluent-ffmpeg");
-          console.log("fluent-ffmpeg loaded from regular path");
+          console.log("✅ fluent-ffmpeg loaded in development");
           moduleFound = true;
-        } catch (fallbackError: unknown) {
-          console.warn(
-            "Failed to load from regular path:",
-            fallbackError instanceof Error
-              ? fallbackError.message
-              : String(fallbackError)
+        } catch (devError: unknown) {
+          console.error(
+            "❌ fluent-ffmpeg not found in development. Run: bun add fluent-ffmpeg @types/fluent-ffmpeg"
           );
+          moduleFound = false;
         }
       }
-    } else {
-      try {
-        ffmpeg = require("fluent-ffmpeg");
-        console.log("fluent-ffmpeg loaded in development");
-        moduleFound = true;
-      } catch (devError: unknown) {
-        console.error(
-          "fluent-ffmpeg not found in development. Run: npm install fluent-ffmpeg"
-        );
-        moduleFound = false;
-      }
+    } catch (moduleError: unknown) {
+      console.error(
+        "❌ Failed to load fluent-ffmpeg module:",
+        moduleError instanceof Error ? moduleError.message : String(moduleError)
+      );
+      moduleFound = false;
     }
 
-    // Set binary paths if found
+    // Configure fluent-ffmpeg with binary paths
     if (moduleFound && ffmpeg) {
-      if (ffmpegBinaryPath) {
-        ffmpeg.setFfmpegPath(ffmpegBinaryPath);
-        console.log("Set ffmpeg path:", ffmpegBinaryPath);
-      }
-      if (ffprobeBinaryPath) {
-        ffmpeg.setFfprobePath(ffprobeBinaryPath);
-        console.log("Set ffprobe path:", ffprobeBinaryPath);
+      try {
+        if (ffmpegBinaryPath) {
+          ffmpeg.setFfmpegPath(ffmpegBinaryPath);
+          console.log(`🔧 Set ffmpeg path: ${ffmpegBinaryPath}`);
+        }
+        if (ffprobeBinaryPath) {
+          ffmpeg.setFfprobePath(ffprobeBinaryPath);
+          console.log(`🔧 Set ffprobe path: ${ffprobeBinaryPath}`);
+        }
+
+        // Test the configuration with a simple command
+        await new Promise<void>((resolve, reject) => {
+          ffmpeg()
+            .input("color=black:size=1x1:duration=0.1")
+            .inputFormat("lavfi")
+            .output("-")
+            .outputFormat("null")
+            .on("end", () => {
+              console.log("✅ FFmpeg configuration test successful");
+              resolve();
+            })
+            .on("error", (err: Error) => {
+              console.warn("⚠️ FFmpeg configuration test failed:", err.message);
+              // Don't fail initialization, just log warning
+              resolve();
+            })
+            .run();
+        });
+      } catch (configError: unknown) {
+        console.warn(
+          "⚠️ FFmpeg configuration failed:",
+          configError instanceof Error
+            ? configError.message
+            : String(configError)
+        );
       }
     }
 
@@ -205,7 +345,7 @@ async function initializeFFmpeg(): Promise<void> {
       if (!moduleFound) console.warn("  - fluent-ffmpeg module not loaded");
     }
   } catch (error: unknown) {
-    console.error("Failed to initialize FFmpeg:", error);
+    console.error("❌ Failed to initialize FFmpeg:", error);
     console.error("Video processing features will be disabled.");
     ffmpeg = null;
     ffmpegAvailable = false;
@@ -217,22 +357,53 @@ initializeFFmpeg();
 
 export class FFmpegManager {
   private ensureFFmpegAvailable(): void {
-    if (!ffmpegAvailable || !ffmpeg || !ffprobeBinaryPath) {
+    if (
+      !ffmpegAvailable ||
+      !ffmpeg ||
+      !ffmpegBinaryPath ||
+      !ffprobeBinaryPath
+    ) {
+      const missingComponents: string[] = [];
+      if (!ffmpegBinaryPath) missingComponents.push("ffmpeg binary");
+      if (!ffprobeBinaryPath) missingComponents.push("ffprobe binary");
+      if (!ffmpeg) missingComponents.push("fluent-ffmpeg module");
+
       throw new Error(
-        "FFmpeg is not available. Please install FFmpeg:\n" +
-          "Via Chocolatey: choco install ffmpeg\n" +
-          "Or download from: https://ffmpeg.org/download.html"
+        `FFmpeg is not fully available. Missing: ${missingComponents.join(
+          ", "
+        )}.\n` +
+          "Please install FFmpeg:\n" +
+          "  Windows: choco install ffmpeg\n" +
+          "  macOS: brew install ffmpeg\n" +
+          "  Linux: sudo apt install ffmpeg\n" +
+          "  Manual: https://ffmpeg.org/download.html\n" +
+          "And ensure fluent-ffmpeg is installed: bun add fluent-ffmpeg @types/fluent-ffmpeg"
       );
     }
   }
 
   async reinitializeFFmpeg(): Promise<boolean> {
+    console.log("🔄 Reinitializing FFmpeg...");
     await initializeFFmpeg();
     return ffmpegAvailable;
   }
 
   isFFmpegAvailable(): boolean {
     return ffmpegAvailable;
+  }
+
+  getFFmpegInfo(): {
+    available: boolean;
+    ffmpegPath?: string;
+    ffprobePath?: string;
+    moduleLoaded: boolean;
+  } {
+    return {
+      available: ffmpegAvailable,
+      ffmpegPath: ffmpegBinaryPath || undefined,
+      ffprobePath: ffprobeBinaryPath || undefined,
+      moduleLoaded: !!ffmpeg,
+    };
   }
 
   async getVideoInfo(videoPath: string): Promise<VideoInfo> {

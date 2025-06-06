@@ -49,19 +49,33 @@ export function registerFFmpegHandlers() {
   ipcMain.handle("check-ffmpeg-health", async () => {
     try {
       const isAvailable = ffmpegManager.isFFmpegAvailable();
+      const info = ffmpegManager.getFFmpegInfo();
 
       if (!isAvailable) {
+        const missingComponents: string[] = [];
+        if (!info.ffmpegPath) missingComponents.push("ffmpeg binary");
+        if (!info.ffprobePath) missingComponents.push("ffprobe binary");
+        if (!info.moduleLoaded) missingComponents.push("fluent-ffmpeg module");
+
         return {
           available: false,
-          error: "FFmpeg not found",
+          error: `Missing components: ${missingComponents.join(", ")}`,
           message:
-            "Please install FFmpeg from https://ffmpeg.org/download.html",
+            "Please install FFmpeg and ensure fluent-ffmpeg module is available",
+          details: info,
+          installInstructions: {
+            windows: "choco install ffmpeg",
+            macos: "brew install ffmpeg",
+            linux: "sudo apt install ffmpeg",
+            module: "bun add fluent-ffmpeg @types/fluent-ffmpeg",
+          },
         };
       }
 
       return {
         available: true,
         message: "FFmpeg is available and ready",
+        details: info,
       };
     } catch (error) {
       return {

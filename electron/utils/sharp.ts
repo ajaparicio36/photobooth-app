@@ -12,30 +12,52 @@ let pdfAvailable = false;
 
 async function initializeSharp(): Promise<void> {
   try {
-    // Try to load Sharp
+    // Try to load Sharp with better path resolution for packaged apps
     if (app.isPackaged) {
-      // In production, try from unpacked location first
-      try {
-        const unpackedSharpPath = path.join(
+      // Multiple fallback paths for packaged apps
+      const possibleSharpPaths = [
+        path.join(
           process.resourcesPath,
           "app.asar.unpacked",
           "node_modules",
           "sharp"
-        );
-        sharp = require(unpackedSharpPath);
-        console.log("Sharp loaded from unpacked path");
-      } catch {
-        // Fallback to regular require
+        ),
+        path.join(process.resourcesPath, "node_modules", "sharp"),
+        path.join(__dirname, "..", "..", "node_modules", "sharp"),
+        path.join(process.cwd(), "node_modules", "sharp"),
+      ];
+
+      let sharpLoaded = false;
+
+      for (const sharpPath of possibleSharpPaths) {
+        try {
+          console.log(`Trying to load Sharp from: ${sharpPath}`);
+          if (fs.existsSync(sharpPath)) {
+            sharp = require(sharpPath);
+            console.log(`Sharp loaded successfully from: ${sharpPath}`);
+            sharpLoaded = true;
+            break;
+          }
+        } catch (pathError: unknown) {
+          console.warn(
+            `Failed to load Sharp from ${sharpPath}:`,
+            pathError instanceof Error ? pathError.message : String(pathError)
+          );
+        }
+      }
+
+      if (!sharpLoaded) {
+        // Final fallback to regular require
         sharp = require("sharp");
-        console.log("Sharp loaded from regular path");
+        console.log("Sharp loaded from regular require as fallback");
       }
     } else {
       sharp = require("sharp");
       console.log("Sharp loaded in development");
     }
 
-    // Test Sharp functionality
-    await sharp({
+    // Test Sharp functionality with more comprehensive test
+    const testBuffer = await sharp({
       create: {
         width: 10,
         height: 10,
@@ -46,10 +68,15 @@ async function initializeSharp(): Promise<void> {
       .jpeg()
       .toBuffer();
 
-    sharpAvailable = true;
-    console.log("Sharp initialization successful");
+    if (testBuffer && testBuffer.length > 0) {
+      sharpAvailable = true;
+      console.log("✅ Sharp initialization and functionality test successful");
+    } else {
+      throw new Error("Sharp test produced empty buffer");
+    }
   } catch (error) {
-    console.error("Failed to initialize Sharp:", error);
+    console.error("❌ Failed to initialize Sharp:", error);
+    console.error("Image processing features will be disabled");
     sharp = null;
     sharpAvailable = false;
   }
@@ -57,30 +84,59 @@ async function initializeSharp(): Promise<void> {
 
 async function initializePDFKit(): Promise<void> {
   try {
-    // Try to load PDFKit
+    // Try to load PDFKit with better path resolution
     if (app.isPackaged) {
-      try {
-        const unpackedPDFPath = path.join(
+      const possiblePDFPaths = [
+        path.join(
           process.resourcesPath,
           "app.asar.unpacked",
           "node_modules",
           "pdfkit"
-        );
-        PDFDocument = require(unpackedPDFPath);
-        console.log("PDFKit loaded from unpacked path");
-      } catch {
+        ),
+        path.join(process.resourcesPath, "node_modules", "pdfkit"),
+        path.join(__dirname, "..", "..", "node_modules", "pdfkit"),
+        path.join(process.cwd(), "node_modules", "pdfkit"),
+      ];
+
+      let pdfLoaded = false;
+
+      for (const pdfPath of possiblePDFPaths) {
+        try {
+          console.log(`Trying to load PDFKit from: ${pdfPath}`);
+          if (fs.existsSync(pdfPath)) {
+            PDFDocument = require(pdfPath);
+            console.log(`PDFKit loaded successfully from: ${pdfPath}`);
+            pdfLoaded = true;
+            break;
+          }
+        } catch (pathError: unknown) {
+          console.warn(
+            `Failed to load PDFKit from ${pdfPath}:`,
+            pathError instanceof Error ? pathError.message : String(pathError)
+          );
+        }
+      }
+
+      if (!pdfLoaded) {
         PDFDocument = require("pdfkit");
-        console.log("PDFKit loaded from regular path");
+        console.log("PDFKit loaded from regular require as fallback");
       }
     } else {
       PDFDocument = require("pdfkit");
       console.log("PDFKit loaded in development");
     }
 
-    pdfAvailable = true;
-    console.log("PDFKit initialization successful");
+    // Test PDFKit functionality
+    const testDoc = new PDFDocument();
+    if (testDoc && typeof testDoc.pipe === "function") {
+      pdfAvailable = true;
+      console.log("✅ PDFKit initialization and functionality test successful");
+    } else {
+      throw new Error("PDFKit test failed - invalid document object");
+    }
   } catch (error) {
-    console.error("Failed to initialize PDFKit:", error);
+    console.error("❌ Failed to initialize PDFKit:", error);
+    console.error("PDF generation features will be disabled");
     PDFDocument = null;
     pdfAvailable = false;
   }
