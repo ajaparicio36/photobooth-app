@@ -2,18 +2,35 @@
   "name": "photobooth-app",
   "private": true,
   "version": "0.1.0",
+  "description": "Professional photobooth application with DSLR camera support, image processing, and printing capabilities",
+  "author": "Photobooth App Developer",
   "main": "dist-electron/main.js",
   "homepage": "./",
   "scripts": {
     "dev": "vite",
     "build": "tsc --project tsconfig.app.json && vite build",
+    "build:all": "bun run build && tsc --project tsconfig.electron.json",
     "preview": "vite preview",
+    "test:prod": "bun run build:all && electron dist-electron/main.js",
     "electron:dev": "tsc --project tsconfig.electron.json && electron .",
     "electron:build": "bun run build && tsc --project tsconfig.electron.json && electron-builder",
-    "dev:app": "concurrently \"bun run dev\" \"bun run wait-and-electron\"",
-    "wait-and-electron": "wait-on http://localhost:5173 && bun run electron:dev",
-    "build:exe": "bun run build && tsc --project tsconfig.electron.json && electron-builder --win --publish=never",
-    "dist": "bun run build:exe"
+    "dev:electron": "concurrently \"npm run dev\" \"npm run electron:wait\"",
+    "electron:wait": "wait-on http://localhost:5173 && npm run electron:dev",
+    "start": "npm run dev:electron",
+    "rebuild-native": "npx electron-rebuild --parallel --force",
+    "rebuild-native-safe": "node -e \"try { require('./scripts/rebuild-native').rebuildNativeModules().catch(e => console.warn('Rebuild warning:', e.message)); } catch(e) { console.warn('Rebuild script not found, skipping...'); }\"",
+    "rebuild-sharp": "npx electron-rebuild -f -w sharp",
+    "rebuild-printer": "npx electron-rebuild -f -w @grandchef/node-printer",
+    "build:exe": "npm run prepare-build && bun run build && tsc --project tsconfig.electron.json && electron-builder --win --publish=never",
+    "dist": "bun run build:exe",
+    "install-deps": "npx electron-builder install-app-deps",
+    "debug:build": "bun run build && echo 'Build complete' && dir dist && tsc --project tsconfig.electron.json && echo 'TypeScript compile complete' && dir dist-electron",
+    "prepare-build": "npm run clean-problematic-files",
+    "clean-problematic-files": "node scripts/clean-build.js",
+    "rebuild-native-for-build": "npm run rebuild-modules",
+    "rebuild-modules": "node scripts/rebuild-native.js",
+    "postinstall": "npm run install-deps-safe",
+    "install-deps-safe": "npx electron-builder install-app-deps || echo 'install-app-deps failed, continuing...'"
   },
   "build": {
     "appId": "com.photobooth.app",
@@ -24,7 +41,39 @@
     "files": [
       "dist/**/*",
       "dist-electron/**/*",
-      "!node_modules/**/*"
+      "public/**/*",
+      "package.json",
+      "node_modules/**/*",
+      "!node_modules/**/test/**/*",
+      "!node_modules/**/tests/**/*",
+      "!node_modules/**/*.md",
+      "!node_modules/**/README*",
+      "!node_modules/**/CHANGELOG*",
+      "!node_modules/**/LICENSE*",
+      "!node_modules/**/.bin/**/*",
+      "!node_modules/**/bin/**/*",
+      "!node_modules/**/.nyc_output/**/*",
+      "!node_modules/**/coverage/**/*",
+      "!node_modules/**/docs/**/*",
+      "!node_modules/**/example/**/*",
+      "!node_modules/**/examples/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "public",
+        "to": "public",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "asarUnpack": [
+      "**/node_modules/sharp/**/*",
+      "**/node_modules/pdfkit/**/*",
+      "**/node_modules/fontkit/**/*",
+      "**/node_modules/linebreak/**/*",
+      "**/node_modules/fluent-ffmpeg/**/*",
+      "**/node_modules/@grandchef/node-printer/**/*"
     ],
     "win": {
       "target": [
@@ -40,20 +89,29 @@
     },
     "compression": "store",
     "npmRebuild": false,
-    "buildDependenciesFromSource": false,
     "nodeGypRebuild": false,
     "buildVersion": "1.0.0",
     "electronVersion": "28.0.0",
+    "includeSubNodeModules": false,
+    "buildDependenciesFromSource": false,
+    "npmArgs": "--production=false",
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true
     },
     "extraMetadata": {
       "name": "photobooth-app"
-    }
+    },
+    "beforePack": "scripts/before-pack.js",
+    "afterPack": "scripts/after-pack.js"
   },
   "dependencies": {
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/modifiers": "^9.0.0",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@grandchef/node-printer": "^0.8.0",
     "@hookform/resolvers": "^5.0.1",
+    "@mapbox/node-pre-gyp": "^2.0.0",
     "@radix-ui/react-alert-dialog": "^1.1.14",
     "@radix-ui/react-aspect-ratio": "^1.1.7",
     "@radix-ui/react-avatar": "^1.1.10",
@@ -63,6 +121,7 @@
     "@radix-ui/react-label": "^2.1.7",
     "@radix-ui/react-popover": "^1.1.14",
     "@radix-ui/react-progress": "^1.1.7",
+    "@radix-ui/react-radio-group": "^1.3.7",
     "@radix-ui/react-scroll-area": "^1.2.9",
     "@radix-ui/react-select": "^2.2.5",
     "@radix-ui/react-separator": "^1.1.7",
@@ -70,16 +129,23 @@
     "@radix-ui/react-slot": "^1.2.3",
     "@radix-ui/react-switch": "^1.2.5",
     "@radix-ui/react-tabs": "^1.1.12",
+    "@types/fluent-ffmpeg": "^2.1.27",
+    "@types/pdfkit": "^0.13.9",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "embla-carousel-react": "^8.6.0",
+    "fluent-ffmpeg": "^2.1.3",
     "lucide-react": "^0.511.0",
     "motion": "^12.16.0",
     "next-themes": "^0.4.6",
+    "node-pre-gyp": "^0.17.0",
+    "pdfkit": "^0.17.1",
+    "qrcode.react": "^4.2.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-hook-form": "^7.57.0",
     "react-router-dom": "^7.6.1",
+    "sharp": "^0.34.2",
     "sonner": "^2.0.5",
     "tailwind-merge": "^3.3.0",
     "zod": "^3.25.49"
@@ -93,6 +159,7 @@
     "concurrently": "^8.0.0",
     "electron": "^28.0.0",
     "electron-builder": "^24.0.0",
+    "electron-rebuild": "3.2.9",
     "postcss": "^8.4.32",
     "tailwindcss": "^3.3.6",
     "typescript": "^5.0.0",

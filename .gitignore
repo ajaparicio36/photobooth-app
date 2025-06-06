@@ -92,7 +92,6 @@ dist
 
 # Gatsby files
 .cache/
-public
 
 # Storybook build outputs
 .out
@@ -140,3 +139,5 @@ Icon
 Network Trash Folder
 Temporary Items
 .apdisk
+
+/flipbook**
