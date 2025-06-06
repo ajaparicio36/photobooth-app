@@ -6,6 +6,7 @@ import { registerPrinterHandlers } from "./handlers/printer.handlers";
 import { registerSharpHandlers } from "./handlers/sharp.handlers";
 import { registerFileHandlers } from "./handlers/file.handlers";
 import { registerAudioHandlers, cleanupAudio } from "./handlers/audio.handlers";
+import { registerFFmpegHandlers } from "./handlers/ffmpeg.handlers";
 
 app.commandLine.appendSwitch("disable-web-security");
 
@@ -33,6 +34,7 @@ function registerAllHandlers(): void {
   registerSharpHandlers();
   registerFileHandlers();
   registerAudioHandlers(mainWindow);
+  registerFFmpegHandlers();
 }
 
 app.whenReady().then(initializeApp);

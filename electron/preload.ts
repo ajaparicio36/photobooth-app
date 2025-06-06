@@ -77,4 +77,13 @@ contextBridge.exposeInMainWorld("electronAPI", {
   stopAudio: () => ipcRenderer.invoke("stop-audio"),
   setAudioVolume: (volume: number) =>
     ipcRenderer.invoke("set-audio-volume", volume),
+
+  // FFmpeg and video processing
+  getVideoInfo: (videoPath: string) =>
+    ipcRenderer.invoke("get-video-info", videoPath),
+  extractVideoFrames: (videoPath: string, outputDir: string, options?: any) =>
+    ipcRenderer.invoke("extract-video-frames", videoPath, outputDir, options),
+  createFlipbook: (videoPath: string, outputDir: string, options?: any) =>
+    ipcRenderer.invoke("create-flipbook", videoPath, outputDir, options),
+  checkFFmpegHealth: () => ipcRenderer.invoke("check-ffmpeg-health"),
 });

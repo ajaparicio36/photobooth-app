@@ -12,6 +12,7 @@ export var FlipbookPage;
     FlipbookPage["FlipbookStartScreen"] = "FlipbookStartScreen";
     FlipbookPage["RecordingPage"] = "RecordingPage";
     FlipbookPage["VideoPreview"] = "VideoPreview";
+    FlipbookPage["FlipbookProcessing"] = "FlipbookProcessing";
     FlipbookPage["PrintPreview"] = "PrintPreview";
 })(FlipbookPage || (FlipbookPage = {}));
 export var PaperType;

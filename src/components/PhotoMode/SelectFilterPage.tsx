@@ -78,9 +78,13 @@ const SelectFilterPage: React.FC<SelectFilterPageProps> = ({
         );
 
         const fileData = await window.electronAPI.readFile(result.jpegPath);
-        const blob = new Blob([fileData], { type: "image/jpeg" });
-        const url = URL.createObjectURL(blob);
-        setPreviewUrl(url);
+
+        if (fileData.success && fileData.data) {
+          const uint8Array = new Uint8Array(fileData.data);
+          const blob = new Blob([uint8Array], { type: "image/jpeg" });
+          const url = URL.createObjectURL(blob);
+          setPreviewUrl(url);
+        }
       } else {
         // Apply filter to selected original photo for preview
         const photoToPreview = originalPhotos[selectedPreviewPhotoIndex];
@@ -97,12 +101,16 @@ const SelectFilterPage: React.FC<SelectFilterPageProps> = ({
         );
 
         if (filterResult.success && filterResult.outputPath) {
-          const fileData = await window.electronAPI.readFile(
+          const fileResponse = await window.electronAPI.readFile(
             filterResult.outputPath
           );
-          const blob = new Blob([fileData], { type: "image/jpeg" });
-          const url = URL.createObjectURL(blob);
-          setPreviewUrl(url);
+
+          if (fileResponse.success && fileResponse.data) {
+            const uint8Array = new Uint8Array(fileResponse.data);
+            const blob = new Blob([uint8Array], { type: "image/jpeg" });
+            const url = URL.createObjectURL(blob);
+            setPreviewUrl(url);
+          }
         }
       }
     } catch (error) {
@@ -146,14 +154,21 @@ const SelectFilterPage: React.FC<SelectFilterPageProps> = ({
 
         if (filterResult.success && filterResult.outputPath) {
           // Read filtered image back
-          const filteredData = await window.electronAPI.readFile(
+          const filteredResponse = await window.electronAPI.readFile(
             filterResult.outputPath
           );
-          const blob = new Blob([filteredData], { type: "image/jpeg" });
-          const filteredFile = new File([blob], `filtered_${photo.name}`, {
-            type: "image/jpeg",
-          });
-          filteredPhotos.push(filteredFile);
+
+          if (filteredResponse.success && filteredResponse.data) {
+            const uint8Array = new Uint8Array(filteredResponse.data);
+            const blob = new Blob([uint8Array], { type: "image/jpeg" });
+            const filteredFile = new File([blob], `filtered_${photo.name}`, {
+              type: "image/jpeg",
+            });
+            filteredPhotos.push(filteredFile);
+          } else {
+            // If filter failed, use original
+            filteredPhotos.push(photo);
+          }
         } else {
           // If filter failed, use original
           filteredPhotos.push(photo);

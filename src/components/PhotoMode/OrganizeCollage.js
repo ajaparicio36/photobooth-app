@@ -79,12 +79,17 @@ const OrganizeCollage = ({ photos, setCurrentPage, setPrintFile, setJpegPreviewP
             setJpegPreviewPath(result.jpegPath);
             // Read the PDF file if available, otherwise use JPEG
             let printFilePath = result.pdfPath || result.jpegPath;
-            const fileData = await window.electronAPI.readFile(printFilePath);
+            const fileResponse = await window.electronAPI.readFile(printFilePath);
+            if (!fileResponse.success || !fileResponse.data) {
+                throw new Error(`Failed to read file: ${fileResponse.error || "Unknown error"}`);
+            }
+            // Convert the number array back to Uint8Array for blob creation
+            const uint8Array = new Uint8Array(fileResponse.data);
             const fileType = result.pdfPath ? "application/pdf" : "image/jpeg";
             const fileName = result.pdfPath
                 ? `collage_${Date.now()}.pdf`
                 : `collage_${Date.now()}.jpg`;
-            const blob = new Blob([fileData], { type: fileType });
+            const blob = new Blob([uint8Array], { type: fileType });
             const printFile = new File([blob], fileName, { type: fileType });
             setPrintFile(printFile);
             setCurrentPage(PhotoModePage.PrintQueue);

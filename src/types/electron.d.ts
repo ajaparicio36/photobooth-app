@@ -36,7 +36,14 @@ export interface ElectronAPI {
     data: any,
     path: string
   ) => Promise<{ success: boolean; path: string }>;
-  readFile: (path: string) => Promise<Buffer>;
+  readFile: (
+    path: string
+  ) => Promise<{
+    success: boolean;
+    data?: number[];
+    path?: string;
+    error?: string;
+  }>;
   createTempFile: (
     data: any,
     extension: string
@@ -88,6 +95,61 @@ export interface ElectronAPI {
   setAudioVolume: (
     volume: number
   ) => Promise<{ success: boolean; volume: number }>;
+
+  // FFmpeg and video processing
+  getVideoInfo: (videoPath: string) => Promise<{
+    duration: number;
+    width: number;
+    height: number;
+    fps: number;
+    codec: string;
+  }>;
+  extractVideoFrames: (
+    videoPath: string,
+    outputDir: string,
+    options?: {
+      startTime?: number;
+      duration?: number;
+      fps?: number;
+      width?: number;
+      height?: number;
+      format?: "jpg" | "png";
+      quality?: number;
+    }
+  ) => Promise<{
+    frames: string[];
+    totalFrames: number;
+    videoInfo: {
+      duration: number;
+      width: number;
+      height: number;
+      fps: number;
+      codec: string;
+    };
+  }>;
+  createFlipbook: (
+    videoPath: string,
+    outputDir: string,
+    options?: {
+      framesPerPage?: number;
+      backgroundColor?: string;
+      spacing?: number;
+      aspectRatio?: number;
+      logoPath?: string;
+      logoSize?: number;
+      filterName?: string;
+    }
+  ) => Promise<{
+    pages: string[];
+    pdfPath: string;
+    frameCount: number;
+    pageCount: number;
+  }>;
+  checkFFmpegHealth: () => Promise<{
+    available: boolean;
+    error?: string;
+    message: string;
+  }>;
 }
 
 declare global {

@@ -10,6 +10,7 @@ export declare enum FlipbookPage {
     FlipbookStartScreen = "FlipbookStartScreen",
     RecordingPage = "RecordingPage",
     VideoPreview = "VideoPreview",
+    FlipbookProcessing = "FlipbookProcessing",// Added for loading state
     PrintPreview = "PrintPreview"
 }
 export declare enum PaperType {

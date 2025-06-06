@@ -52,9 +52,12 @@ const SelectFilterPage = ({ photos, originalPhotos, setPhotos, setCurrentPage, p
                     backgroundColor: "#ffffff",
                 });
                 const fileData = await window.electronAPI.readFile(result.jpegPath);
-                const blob = new Blob([fileData], { type: "image/jpeg" });
-                const url = URL.createObjectURL(blob);
-                setPreviewUrl(url);
+                if (fileData.success && fileData.data) {
+                    const uint8Array = new Uint8Array(fileData.data);
+                    const blob = new Blob([uint8Array], { type: "image/jpeg" });
+                    const url = URL.createObjectURL(blob);
+                    setPreviewUrl(url);
+                }
             }
             else {
                 // Apply filter to selected original photo for preview
@@ -65,10 +68,13 @@ const SelectFilterPage = ({ photos, originalPhotos, setPhotos, setCurrentPage, p
                 await window.electronAPI.saveFile(arrayBuffer, tempPath);
                 const filterResult = await window.electronAPI.applyImageFilter(tempPath, selectedFilter, outputPath);
                 if (filterResult.success && filterResult.outputPath) {
-                    const fileData = await window.electronAPI.readFile(filterResult.outputPath);
-                    const blob = new Blob([fileData], { type: "image/jpeg" });
-                    const url = URL.createObjectURL(blob);
-                    setPreviewUrl(url);
+                    const fileResponse = await window.electronAPI.readFile(filterResult.outputPath);
+                    if (fileResponse.success && fileResponse.data) {
+                        const uint8Array = new Uint8Array(fileResponse.data);
+                        const blob = new Blob([uint8Array], { type: "image/jpeg" });
+                        const url = URL.createObjectURL(blob);
+                        setPreviewUrl(url);
+                    }
                 }
             }
         }
@@ -102,12 +108,19 @@ const SelectFilterPage = ({ photos, originalPhotos, setPhotos, setCurrentPage, p
                 const filterResult = await window.electronAPI.applyImageFilter(tempPath, selectedFilter, outputPath);
                 if (filterResult.success && filterResult.outputPath) {
                     // Read filtered image back
-                    const filteredData = await window.electronAPI.readFile(filterResult.outputPath);
-                    const blob = new Blob([filteredData], { type: "image/jpeg" });
-                    const filteredFile = new File([blob], `filtered_${photo.name}`, {
-                        type: "image/jpeg",
-                    });
-                    filteredPhotos.push(filteredFile);
+                    const filteredResponse = await window.electronAPI.readFile(filterResult.outputPath);
+                    if (filteredResponse.success && filteredResponse.data) {
+                        const uint8Array = new Uint8Array(filteredResponse.data);
+                        const blob = new Blob([uint8Array], { type: "image/jpeg" });
+                        const filteredFile = new File([blob], `filtered_${photo.name}`, {
+                            type: "image/jpeg",
+                        });
+                        filteredPhotos.push(filteredFile);
+                    }
+                    else {
+                        // If filter failed, use original
+                        filteredPhotos.push(photo);
+                    }
                 }
                 else {
                     // If filter failed, use original

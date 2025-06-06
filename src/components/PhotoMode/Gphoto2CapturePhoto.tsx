@@ -61,27 +61,33 @@ const Gphoto2CapturePhoto: React.FC<Gphoto2CapturePhotoProps> = ({
       );
 
       const result = await window.electronAPI.captureImage(outputPath);
-      const fileData = await window.electronAPI.readFile(result);
-      const blob = new Blob([fileData], { type: "image/jpeg" });
+      const fileResponse = await window.electronAPI.readFile(result);
 
-      const photoFile = new File(
-        [blob],
-        `photo_${capturedPhotos.length + 1}.jpg`,
-        { type: "image/jpeg" }
-      );
+      if (fileResponse.success && fileResponse.data) {
+        const uint8Array = new Uint8Array(fileResponse.data);
+        const blob = new Blob([uint8Array], { type: "image/jpeg" });
 
-      const newPhotos = [...capturedPhotos, photoFile];
-      setCapturedPhotos(newPhotos);
+        const photoFile = new File(
+          [blob],
+          `photo_${capturedPhotos.length + 1}.jpg`,
+          { type: "image/jpeg" }
+        );
 
-      console.log(
-        `DSLR Photo ${newPhotos.length} captured. Total needed: ${requiredPhotos}`
-      );
+        const newPhotos = [...capturedPhotos, photoFile];
+        setCapturedPhotos(newPhotos);
 
-      if (newPhotos.length >= requiredPhotos) {
-        setPhotos(newPhotos);
-        setCurrentPage(PhotoModePage.SelectFilterPage);
+        console.log(
+          `DSLR Photo ${newPhotos.length} captured. Total needed: ${requiredPhotos}`
+        );
+
+        if (newPhotos.length >= requiredPhotos) {
+          setPhotos(newPhotos);
+          setCurrentPage(PhotoModePage.SelectFilterPage);
+        } else {
+          setTimeout(() => startCountdown(5), 1500);
+        }
       } else {
-        setTimeout(() => startCountdown(5), 1500);
+        throw new Error(fileResponse.error || "Failed to read captured image");
       }
     } catch (error) {
       console.error("DSLR capture failed:", error);

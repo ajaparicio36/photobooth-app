@@ -54,12 +54,19 @@ const PrintQueue: React.FC<PrintQueueProps> = ({
     if (jpegPreviewPath) {
       try {
         // First, try to read the file and create a blob URL
-        const fileData = await window.electronAPI.readFile(jpegPreviewPath);
-        const blob = new Blob([fileData], { type: "image/jpeg" });
-        const url = URL.createObjectURL(blob);
-        setCollagePreview(url);
-        console.log("Successfully loaded JPEG preview from file data");
-        return;
+        const fileResponse = await window.electronAPI.readFile(jpegPreviewPath);
+
+        if (fileResponse.success && fileResponse.data) {
+          // Convert the number array back to Uint8Array for blob creation
+          const uint8Array = new Uint8Array(fileResponse.data);
+          const blob = new Blob([uint8Array], { type: "image/jpeg" });
+          const url = URL.createObjectURL(blob);
+          setCollagePreview(url);
+          console.log("Successfully loaded JPEG preview from file data");
+          return;
+        } else {
+          console.warn("Failed to read file:", fileResponse.error);
+        }
       } catch (error) {
         console.warn("Failed to load JPEG preview from file data:", error);
       }
